@@ -1,9 +1,11 @@
 mod cerium_vm;
-mod memory;
+mod cerium_ram;
 mod growable_memory;
 mod allocator;
-mod cerium_ptr;
+mod cerium_types;
+mod cerium_register;
+mod memory_buffer;
 
 pub use cerium_vm::*;
-pub use memory::*;
-pub use cerium_ptr::*;
+pub use cerium_ram::*;
+pub use cerium_types::*;

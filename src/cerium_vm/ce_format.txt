@@ -1,0 +1,81 @@
+Instruction format:
+Whenever a type is needed, it shall be represented by two bits:
+    00 -> Int8  (bool)
+    01 -> Int16 (char)
+    10 -> Int32 (int)
+    11 -> Float (float)
+Whenever a location is needed, it shall be represented by four 
+bits; three bits for the register plus one bit to indicate 
+indirection:
+    000 -> Stack pointer
+    001 - 111 -> Registers 1-7
+
+Numerical binary operations shall be represented by three bytes with 
+the following syntax:
+    The first two bits shall be 11
+    The following two bits shall be the type of the operation
+    The following four bits will represent the operation to be performed:
+        0000 -> NO-OP
+        0001 -> XOR
+        0010 -> OR
+        0011 -> AND
+        0100 -> NO-OP
+        0101 -> NO-OP
+        0110 -> SHL
+        0111 -> SHR
+        1000 -> NO-OP
+        1001 -> MUL
+        1010 -> ADD
+        1011 -> SUB
+        1100 -> DIV (signed)
+        1101 -> MOD (signed)
+    The following twelve bits shall be the left operand, right operand, and dest
+    locations of the operation, and the last four bits are meaningless
+
+    In addition, there are the CMP/JMP instructions
+        1110 -> CMP
+        1111 -> JMP 
+    where the following four bits are the source, the next three bits indicate the 
+    condition (see below), the next bit is useless, the next four bits indicate 
+    the dest/jump target locations of the comparison, and the last four bits are 
+    meaningless. The condition is represented as 
+        < = > where each of the three bits indicates whether to jump if less than
+        zero, equal to zero, and greater than zero, respectively
+
+Other operations shall be represented by the following
+    0000 -> MOV
+        The following four bits shall be the source and dest types
+        The following eight bits shall be the source and dest locations
+    0001 -> LOD8
+        The following four bits shall be the dest location
+        The following byte shall be the data
+    0010 -> LOD16
+        The following four bits shall be the dest location
+        The following two bytes shall be the data
+    0011 -> LOD32
+        The following four bits shall be the dest location
+        The following four bytes shall be the data
+    0100 -> HALT
+    0101 -> MEMCPY
+        The following twelve bits shall be the source, dest, and size
+        location. Source and dest must have the indirection flag, and
+        size will always be interpreted as a 32-bit unsigned integer.
+    0110 -> NEW
+        The following eight bits shall be the size and dest locations.
+        Size and dest shall always be interpreted as a 32-bit unsigned
+        integers
+    0111 -> DEL
+        The following four bits shall be the source location. Source 
+        shall always be interpreted as a 32-bit unsigned integer
+
+In addition, there are the following unary operations:
+    1000 -> A-NEG (arithmetic negation)
+    1001 -> B-NEG (bitwise negation)
+where the following two bits shall be the type, the next two be meaningless, 
+and the next eight be the source and dest locations  
+
+Finally, there are the following IO operations (to be removed later):
+    1010 -> INP
+        where the following four bits are the target location (type int) 
+    1010 -> DSP
+        where the following four bits are the source location (type int)

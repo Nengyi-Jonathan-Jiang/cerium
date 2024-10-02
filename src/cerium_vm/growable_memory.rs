@@ -1,34 +1,45 @@
+use crate::cerium_vm::{CeWord, CeriumPtr, CeriumType};
+use crate::cerium_vm::memory_buffer::{MemoryBuffer, MemoryBufferPtr};
+
 pub struct GrowableMemoryBlock {
-    memory: Vec<u8>,
+    pub memory: MemoryBuffer,
+}
+
+impl Default for GrowableMemoryBlock {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GrowableMemoryBlock {
-    const INITIAL_MEMORY: usize = 1 << 8;
-    const MAX_MEMORY: usize = 1 << 16;
+    const INITIAL_MEMORY: CeWord = 1 << 8;
+    const MAX_MEMORY: CeWord = 1 << 16;
 
     pub fn new() -> Self {
-        GrowableMemoryBlock { memory: Vec::from([0; Self::INITIAL_MEMORY]) }
+        let mut memory = MemoryBuffer::new();
+        memory.resize(Self::INITIAL_MEMORY as usize);
+        GrowableMemoryBlock { memory }
     }
 
-    pub fn resize_to_fit(&mut self, ptr: usize) -> Result<(), String> {
-        if ptr > Self::MAX_MEMORY {
+    pub fn resize_to_fit(&mut self, size: CeWord) -> Result<(), String> {
+        if size > Self::MAX_MEMORY {
             Err(format!(
                 "CeriumVM error: memory size cannot exceed {} bytes",
                 Self::MAX_MEMORY
             ).to_owned())
         } else {
-            if ptr > self.memory.len() {
-                self.memory.resize(usize::next_power_of_two(ptr), 0);
+            if size > self.memory.size() as CeWord {
+                self.memory.resize(usize::next_power_of_two(size as usize));
             }
 
             Ok(())
         }
     }
 
-    pub fn at<T>(&mut self, ptr: usize) -> Result<&mut T, String> {
-        match self.resize_to_fit(ptr + size_of::<T>()) {
+    pub fn at<T: CeriumType>(&mut self, ptr: CeriumPtr) -> Result<MemoryBufferPtr<T>, String> {
+        match self.resize_to_fit(CeWord::from(ptr) + size_of::<T>() as CeWord) {
             Ok(_) => unsafe {
-                Ok(self.memory.as_mut_ptr().add(ptr).cast::<T>().as_mut().unwrap())
+                Ok(self.memory.get(CeWord::from(ptr) as usize))
             }
             Err(err) => {
                 Err(err)

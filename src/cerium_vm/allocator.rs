@@ -1,157 +1,310 @@
+use crate::cerium_vm::cerium_types::{CeriumPtr, CeriumSize};
 use std::collections::{BTreeMap, BTreeSet};
-use crate::cerium_vm::cerium_ptr::{CeriumPtr, CeriumSize};
-use crate::util::multimap::OrderedSetMultiMap;
+use std::fmt::{Debug, Formatter};
+use crate::cerium_vm::CeWord;
 
-#[derive(Copy, Clone)]
-struct MemoryBlock {
-    start_ptr: CeriumPtr,
-    size: CeriumSize,
+#[derive(Copy, Clone, Debug)]
+struct MemorySpan {
+    start: CeriumPtr,
+    end: CeriumPtr,
 }
 
-impl MemoryBlock {
-    fn end_ptr(&self) -> CeriumPtr {
-        self.start_ptr + self.size
+impl MemorySpan {
+    fn size(&self) -> CeriumSize {
+        self.end - self.start
     }
 }
 
-pub struct Allocator {
-    used_blocks: BTreeMap<CeriumPtr, CeriumSize>,
-    available_blocks: OrderedSetMultiMap<CeriumSize, CeriumPtr>,
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum MemoryBlockStatus {
+    USED,
+    FREE,
+}
 
-    available_block_before: BTreeMap<CeriumPtr, CeriumPtr>,
-    available_block_size: BTreeMap<CeriumPtr, CeriumSize>,
+#[derive(Copy, Clone, Debug)]
+struct MemoryBlockInfo {
+    span: MemorySpan,
+    status: MemoryBlockStatus,
+    prev_block_start_ptr: Option<CeriumPtr>,
+}
+
+#[derive(Default)]
+pub struct Allocator {
+    blocks: BTreeMap<CeriumPtr, MemoryBlockInfo>,
+
+    free_blocks_for_size: FreeBlocksMap,
+
     last_heap_ptr: CeriumPtr,
 }
 
 impl Allocator {
-    pub fn new() -> Allocator {
-        Allocator {
-            used_blocks: Default::default(),
-            available_blocks: Default::default(),
-            available_block_before: Default::default(),
-            available_block_size: Default::default(),
-            last_heap_ptr: 0.into(),
-        }
+    fn mark_block_free(&mut self, ptr: CeriumPtr) -> MemoryBlockInfo {
+        let curr_block = self.blocks.get_mut(&ptr).expect("Internal CeriumVM error: Invalid pointer");
+        curr_block.status = MemoryBlockStatus::FREE;
+
+        let curr_block: MemoryBlockInfo = *curr_block;
+        self.free_blocks_for_size.insert(curr_block.span.size(), ptr);
+        curr_block
     }
 
-    /// Retrieves 
-    fn get_used_block_for(&self, start_ptr: CeriumPtr) -> Option<MemoryBlock> {
-        if !self.is_valid_pointer(start_ptr) {
-            return None;
-        }
+    fn mark_block_used(&mut self, ptr: CeriumPtr) -> MemoryBlockInfo {
+        let curr_block = self.blocks.get_mut(&ptr).expect("Internal CeriumVM error: Invalid pointer");
+        curr_block.status = MemoryBlockStatus::USED;
 
-        let size = *self.used_blocks.get(&start_ptr).unwrap();
-
-        Some(MemoryBlock { start_ptr, size })
+        let curr_block: MemoryBlockInfo = *curr_block;
+        self.free_blocks_for_size.remove(curr_block.span.size(), ptr);
+        curr_block
     }
 
-    /// Marks a memory block as available and merges it with adjacent available blocks
-    fn mark_block_available(&mut self, mut block: MemoryBlock) {
-        self.used_blocks.remove(&block.start_ptr);
-
-        self.available_blocks.insert(block.size, block.start_ptr);
-
-        self.available_block_before.insert(block.end_ptr(), block.start_ptr);
-        self.available_block_size.insert(block.start_ptr, block.size);
-
-        // Merge with block before
-        if let Some(start_ptr) = self.available_block_before.get(&block.start_ptr).cloned() {
-            let size = self.available_block_size.get(&start_ptr).unwrap().clone();
-
-            block = self.merge_free_blocks(
-                MemoryBlock { start_ptr, size },
-                block,
-            );
+    fn add_block(&mut self, block: MemoryBlockInfo) {
+        if block.status == MemoryBlockStatus::FREE {
+            self.free_blocks_for_size.insert(block.span.size(), block.span.start);
         }
 
-        // Merge with block after
-        if let Some(size) = self.available_block_size.get(&block.end_ptr()).cloned() {
-            let start_ptr = block.end_ptr();
-            self.merge_free_blocks(
-                block,
-                MemoryBlock { start_ptr, size },
-            );
+        self.blocks.insert(block.span.start, block);
+    }
+
+    fn remove_block(&mut self, block: MemoryBlockInfo) {
+        if block.status == MemoryBlockStatus::FREE {
+            self.free_blocks_for_size.remove(block.span.size(), block.span.start);
+        }
+        self.blocks.remove(&block.span.start);
+    }
+
+    /// Marks a memory block as free and merges it with adjacent free blocks
+    fn merge_free_block_with_adjacent(&mut self, mut curr_block: MemoryBlockInfo) {
+        // If there is a block before this block
+        if let Some(prev_block_ptr) = curr_block.prev_block_start_ptr {
+            let prev_block: MemoryBlockInfo = self.blocks.get(&prev_block_ptr).cloned().unwrap();
+            // We should merge with it if it is free
+            if prev_block.status == MemoryBlockStatus::FREE {
+                curr_block = self.merge_free_blocks(
+                    prev_block,
+                    curr_block,
+                );
+            }
+        }
+
+        // If there is a block after this block
+        if let Some(next_block) = self.blocks.get(&curr_block.span.end).cloned() {
+            // We should merge with it if it is free
+            if next_block.status == MemoryBlockStatus::FREE {
+                self.merge_free_blocks(
+                    curr_block,
+                    next_block,
+                );
+            }
+        }
+        // Otherwise, we can remove this block  entirely because it is a trailing free block
+        else {
+            self.remove_block(curr_block);
+            return;
         }
     }
 
     fn merge_free_blocks(
         &mut self,
-        block1: MemoryBlock,
-        block2: MemoryBlock,
-    ) -> MemoryBlock {
-        let start_ptr = block1.start_ptr;
-        let end_ptr = block2.end_ptr();
-        let middle_ptr = block1.end_ptr();
-        let size = block1.size + block2.size;
-        if middle_ptr != block2.start_ptr {
-            panic!("JeVM Internal Error: can only merged consecutive available blocks");
+        block1: MemoryBlockInfo,
+        block2: MemoryBlockInfo,
+    ) -> MemoryBlockInfo {
+        if block1.span.end != block2.span.start
+            || block1.status != MemoryBlockStatus::FREE
+            || block2.status != MemoryBlockStatus::FREE
+        {
+            panic!("Internal CeriumVM Error: can only merged consecutive free blocks");
         }
 
-        self.available_block_size.insert(start_ptr, size);
-        self.available_block_size.remove(&middle_ptr);
-        self.available_block_before.remove(&middle_ptr);
-        self.available_block_before.insert(end_ptr, start_ptr);
+        let start = block1.span.start;
+        let end = block2.span.end;
 
-        self.remove_block(&block1);
-        self.remove_block(&block2);
+        let merged_block_info = MemoryBlockInfo {
+            span: MemorySpan { start, end },
+            status: MemoryBlockStatus::FREE,
+            prev_block_start_ptr: block1.prev_block_start_ptr,
+        };
 
-        self.available_blocks.insert(size, start_ptr);
-
-        MemoryBlock { start_ptr, size }
-    }
-
-    fn remove_block(&mut self, block: &MemoryBlock) {
-        self.available_blocks.remove(block.size, block.start_ptr);
-    }
-
-    fn retrieve_available_block_with_minimum_size(&mut self, min_size: CeriumSize) -> Option<MemoryBlock> {
-        if let Some(size) = self.available_blocks.next_higher_key(min_size).copied() {
-            if let Some(start_ptr) = self.available_blocks.remove_first_value_for(size) {
-                return Some(MemoryBlock { start_ptr, size });
-            }
+        // Update the prev pointer of the block after the merged block, if there is one
+        if let Some(next_block) = self.blocks.get_mut(&end) {
+            next_block.prev_block_start_ptr = Some(start);
         }
 
-        None
+        self.remove_block(block1);
+        self.remove_block(block2);
+        self.add_block(merged_block_info);
+
+        merged_block_info
+    }
+
+    fn split_free_block(
+        &mut self,
+        block: MemoryBlockInfo,
+        left_size: CeriumSize,
+    ) -> (MemoryBlockInfo, MemoryBlockInfo) {
+        if block.status != MemoryBlockStatus::FREE {
+            panic!("Internal CeriumVM Error: can only split a free block");
+        }
+
+        let start = block.span.start;
+        let middle = block.span.start + left_size;
+        let end = block.span.end;
+
+        let left_block = MemoryBlockInfo {
+            span: MemorySpan { start, end: middle },
+            status: MemoryBlockStatus::FREE,
+            prev_block_start_ptr: block.prev_block_start_ptr,
+        };
+        let right_block = MemoryBlockInfo {
+            span: MemorySpan { start: middle, end },
+            status: MemoryBlockStatus::FREE,
+            prev_block_start_ptr: Some(start),
+        };
+
+        // Update the prev pointer of the block after the right block, if there is one
+        if let Some(next_block) = self.blocks.get_mut(&end) {
+            next_block.prev_block_start_ptr = Some(middle);
+        }
+
+        self.remove_block(block);
+        self.add_block(left_block);
+        self.add_block(right_block);
+
+        (left_block, right_block)
     }
 
     pub fn allocate(&mut self, alloc_size: CeriumSize) -> CeriumPtr {
-        let start_ptr: CeriumPtr;
-
         // Try to find a free block of the right size
-        if let Some(block) = self.retrieve_available_block_with_minimum_size(alloc_size) {
-            self.mark_block_available(block);
-            start_ptr = block.start_ptr;
-
+        if let Some(mut block) = self.free_blocks_for_size.get_first_ptr_with_min_size(alloc_size).and_then(|x| self.blocks.get(&x).cloned()) {
             // Split the block
-            if block.size > alloc_size {
-                self.mark_block_available(
-                    MemoryBlock {
-                        start_ptr: block.start_ptr + alloc_size,
-                        size: block.size - alloc_size,
-                    }
-                );
+            if block.span.size() > alloc_size {
+                block = self.split_free_block(block, alloc_size).0;
             }
-        } else {
-            // Allocate a new space at the end of the heap
-            start_ptr = self.last_heap_ptr;
-            self.last_heap_ptr = self.last_heap_ptr + alloc_size;
+
+            self.mark_block_used(block.span.start);
+            return block.span.start;
         }
 
-        // Update sizes map
-        self.used_blocks.insert(start_ptr, alloc_size);
+        // Allocate a new space at the end of the heap
+        let start = self.last_heap_ptr;
+        let end = start + alloc_size;
 
-        start_ptr
+        self.add_block(MemoryBlockInfo {
+            span: MemorySpan { start, end },
+            status: MemoryBlockStatus::USED,
+            prev_block_start_ptr: self.blocks.last_key_value().map(|(x, _)| *x),
+        });
+        self.last_heap_ptr = end;
+
+        start
     }
 
-    pub fn deallocate(&mut self, ptr: CeriumPtr) {
-        if let Some(used_block) = self.get_used_block_for(ptr) {
-            self.mark_block_available(used_block);
-        } else {
-            panic!("JeVM Error: invalid pointer to deallocate");
+    pub fn deallocate(&mut self, ptr: CeriumPtr) -> Result<(), String> {
+        if let Some(block) = self.blocks.get(&ptr).cloned() {
+            if block.status == MemoryBlockStatus::USED {
+                let block = self.mark_block_free(ptr);
+                self.merge_free_block_with_adjacent(block);
+                return Ok(());
+            }
+        }
+
+        Err("CeriumVM Error: invalid pointer to deallocate".to_owned())
+    }
+}
+
+impl Debug for Allocator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        macro_rules! write_or_return {
+            ($f:expr, $($arg:tt)*) => {
+                if let Err(e) = write!($f, $($arg)*) {
+                    return Err(e);
+                }
+            };
+        }
+
+
+        write_or_return!(f, "Memory layout: ");
+
+        for i in 0..self.last_heap_ptr.into() {
+            if let Some(block) = self.blocks.get(&i.into()).cloned() {
+                let mut size: CeWord = block.span.size().into();
+                let status = block.status;
+
+                match status {
+                    MemoryBlockStatus::USED => {
+                        if size == 1 {
+                            write_or_return!(f, "<>");
+                            continue;
+                        }
+                        size -= 2;
+                        write_or_return!(f, "<-");
+                        for _ in 0..size {
+                            write_or_return!(f, "--");
+                        }
+                        print!("->");
+                    }
+                    MemoryBlockStatus::FREE => {
+                        if size == 1 {
+                            write_or_return!(f, "[]");
+                            continue;
+                        }
+                        size -= 2;
+                        write_or_return!(f, "[~");
+                        for _ in 0..size {
+                            write_or_return!(f, "~~");
+                        }
+                        write_or_return!(f, "~]");
+                    }
+                }
+            }
+        }
+
+        writeln!(f)
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct FreeBlocksMap {
+    backing_map: BTreeMap<CeriumSize, BTreeSet<CeriumPtr>>,
+}
+
+impl FreeBlocksMap
+{
+    pub fn get_ptrs_with_size(&mut self, size: CeriumSize) -> &mut BTreeSet<CeriumPtr> {
+        self.backing_map.entry(size).or_insert_with(BTreeSet::new)
+    }
+
+    pub fn insert(&mut self, key: CeriumSize, value: CeriumPtr) {
+        self.get_ptrs_with_size(key).insert(value);
+    }
+
+    pub fn remove(&mut self, size: CeriumSize, ptr: CeriumPtr) {
+        if let Some(set) = self.backing_map.get_mut(&size) {
+            set.remove(&ptr);
+
+            if set.is_empty() {
+                self.backing_map.remove(&size);
+            }
         }
     }
 
-    pub fn is_valid_pointer(&self, ptr: CeriumPtr) -> bool {
-        self.used_blocks.contains_key(&ptr)
+    pub fn get_first_value_for(&mut self, key: CeriumSize) -> Option<CeriumPtr> {
+        if let Some(set) = self.backing_map.get_mut(&key) {
+            return set.first().cloned();
+        }
+        None
+    }
+
+    pub fn next_higher_key(&self, lower_bound: CeriumSize) -> Option<CeriumSize> {
+        let entry = self.backing_map.range(lower_bound..).next();
+        if let Some((key, _)) = entry {
+            Some(*key)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_first_ptr_with_min_size(&self, minimum_size: CeriumSize) -> Option<CeriumPtr> {
+        self.backing_map.range(minimum_size..).next()
+            .and_then(|(key, _)| self.backing_map.get(key))
+            .and_then(|set| set.first().cloned())
     }
 }
