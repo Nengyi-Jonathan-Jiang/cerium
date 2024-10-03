@@ -1,7 +1,7 @@
     // Set up
-    ilod r5 <- EVEN_CASE
-    ilod r6 <- LOOP
-    ilod r7 <- END
+    lod r5 <- EVEN_CASE
+    lod r6 <- LOOP
+    lod r7 <- END
 
     // Take input
     input -> r1
@@ -10,27 +10,27 @@ LOOP:
     // Display current
     output <- r1
     // Check base case (n == 1)
-    ilod r3 <- 1
-    isub r2 <- r1 - r3
+    lod r3 <- i 1
+    sub i r2 <- r1 - r3
     jmp r7 if i r2 == 0
 
     // Check parity
-    ilod r2 <- 2
-    imod r2 <- r1 % r2
+    lod r2 <- i 2
+    mod i r2 <- r1 % r2
     jmp r5 if i r2 == 0
 
     // Odd case: n -> 3n + 1
-    ilod r2 <- 3
-    imul r1 <- r1 * r2
-    ilod r2 <- 1
-    iadd r1 <- r1 + r2
+    lod r2 <- i 3
+    mul i r1 <- r1 * r2
+    lod r2 <- i 1
+    add i r1 <- r1 + r2
     jmp r6 always
 
-EVEN:
+EVEN_CASE:
     // Even case: n -> n / 2
-    ilod r2 <- 1
-    ishr r1 <- r1 >> r2
-    JMP r6 always
+    lod r2 <- i 1
+    shr i r1 <- r1 >> r2
+    jmp r6 always
 
 END:
     halt
