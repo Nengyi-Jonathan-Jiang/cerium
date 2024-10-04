@@ -1,5 +1,5 @@
-use crate::cerium_vm::{CeWord, CeriumType};
-use crate::cerium_vm::memory_buffer::{MemoryBufferPtr};
+use super::{CeWord};
+use crate::cerium::memory_buffer::{Endianness, MemoryBufferPtr};
 
 #[derive(Default)]
 pub struct CeriumRegister {
@@ -7,7 +7,7 @@ pub struct CeriumRegister {
 }
 
 impl CeriumRegister {
-    pub fn get<T: CeriumType>(&mut self) -> MemoryBufferPtr<T> {
+    pub fn get<T: Endianness>(&mut self) -> MemoryBufferPtr<T> {
         unsafe {
             MemoryBufferPtr::new((&mut self.value) as *mut CeWord)
         }

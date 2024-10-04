@@ -69,8 +69,8 @@ Other operations shall be represented by the following
         shall always be interpreted as a 32-bit unsigned integer
 
 In addition, there are the following unary operations:
-    1000 -> A-NEG (arithmetic negation)
-    1001 -> B-NEG (bitwise negation)
+    1000 -> NEG (arithmetic negation)
+    1001 -> NOT (bitwise negation)
 where the following two bits shall be the type, the next two be meaningless, 
 and the next eight be the source and dest locations  
 

@@ -5,7 +5,6 @@ pub struct CasmAssembler {
     output_buffer: Vec<u8>,
     label_placeholder_locations: Vec<(usize, String)>,
     label_locations: HashMap<String, usize>,
-    has_error: bool,
 }
 
 impl CasmAssembler {
@@ -14,7 +13,6 @@ impl CasmAssembler {
             output_buffer: vec![],
             label_placeholder_locations: Default::default(),
             label_locations: Default::default(),
-            has_error: false,
         };
 
         for line in source.split("\n") {
@@ -45,16 +43,16 @@ impl CasmAssembler {
             }
 
             // Arithmetic operations
-            "xor" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b0001)),
-            "or" => try_do!(self.emit_arithmetic_instruction(&mut items,  0b0010)),
-            "and" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b0011)),
-            "shl" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b0110)),
-            "shr" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b0111)),
-            "mul" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b1001)),
-            "add" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b1010)),
-            "sub" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b1011)),
-            "div" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b1100)),
-            "mod" => try_do!(self.emit_arithmetic_instruction(&mut items, 0b1101)),
+            "xor" => try_do!(self.parse_and_emit_binop(&mut items, 0b0001)),
+            "or" => try_do!(self.parse_and_emit_binop(&mut items,  0b0010)),
+            "and" => try_do!(self.parse_and_emit_binop(&mut items, 0b0011)),
+            "shl" => try_do!(self.parse_and_emit_binop(&mut items, 0b0110)),
+            "shr" => try_do!(self.parse_and_emit_binop(&mut items, 0b0111)),
+            "mul" => try_do!(self.parse_and_emit_binop(&mut items, 0b1001)),
+            "add" => try_do!(self.parse_and_emit_binop(&mut items, 0b1010)),
+            "sub" => try_do!(self.parse_and_emit_binop(&mut items, 0b1011)),
+            "div" => try_do!(self.parse_and_emit_binop(&mut items, 0b1100)),
+            "mod" => try_do!(self.parse_and_emit_binop(&mut items, 0b1101)),
 
             // Other operations
             "jmp" => {
@@ -77,8 +75,16 @@ impl CasmAssembler {
                 }
             }
             "cmp" => {
-                // Similar to jmp
-                todo!()
+                let dest_location = try_do!(Self::parse_location(items.next()));
+
+                try_do!(items.next());
+
+                let source_type = try_do!(Self::parse_type(items.next()));
+                let source_location = try_do!(Self::parse_location(items.next()));
+                let comparison_condition = try_do!(Self::parse_condition(items.next()));
+                self.output_buffer.push(0b11_00_1110_u8 | (source_type << 4));
+                self.output_buffer.push((source_location << 4) | comparison_condition);
+                self.output_buffer.push(dest_location << 4);
             }
             "mov" => {
                 let src_type = try_do!(Self::parse_type(items.next()));
@@ -86,7 +92,7 @@ impl CasmAssembler {
                 try_do!(items.next());
                 let dst_type = try_do!(Self::parse_type(items.next()));
                 let dst_loc = try_do!(Self::parse_location(items.next()));
-                
+
                 self.output_buffer.push((src_type << 2) | dst_type);
                 self.output_buffer.push((src_loc << 4) | dst_loc);
             }
@@ -115,7 +121,7 @@ impl CasmAssembler {
                     }
                     "i" => {
                         let value: u32 = try_do!(self.parse_integral_value(items.next()));
-                        
+
                         self.output_buffer.push(0b00110000 | dest);
                         self.output_buffer.push((value >> 24) as u8);
                         self.output_buffer.push((value >> 16) as u8);
@@ -149,33 +155,30 @@ impl CasmAssembler {
                 self.output_buffer.push(0b01000000);
             }
             "memcpy" => {
-                //     0101 -> MEMCPY
-                //     The following twelve bits shall be the source, dest, and size
-                // location. Source and dest must have the indirection flag, and
-                //     size will always be interpreted as a 32-bit unsigned integer.
-                todo!()
+                // memcpy dst <- src ; size
+                let dst = try_do!(Self::parse_location(items.next()));
+                try_do!(items.next());
+                let src = try_do!(Self::parse_location(items.next()));
+                try_do!(items.next());
+                let size = try_do!(Self::parse_location(items.next()));
+
+                self.output_buffer.push(0b01010000 | size);
+                self.output_buffer.push((src << 4) | dst);
             }
             "new" => {
-                //   0110 -> NEW
-                //  The following eight bits shall be the size and dest locations.
-                //  Size and dest shall always be interpreted as a 32-bit unsigned
-                //  integers
+                let dst = try_do!(Self::parse_location(items.next()));
+                try_do!(items.next());
+                let size = try_do!(Self::parse_location(items.next()));
+
+                self.output_buffer.push(0b01100000);
+                self.output_buffer.push((size << 4) | dst);
             }
             "del" => {
-                // 0111 -> DEL
-                // The following four bits shall be the source location. Source
-                // shall always be interpreted as a 32-bit unsigned integer
+                let src = try_do!(Self::parse_location(items.next()));
+                self.output_buffer.push(0b01110000 | src);
             }
-            "neg" => {
-                // 1000 -> A-NEG (arithmetic negation)
-                // where the following two bits shall be the type, the next two be meaningless,
-                // and the next eight be the source and dest locations
-            }
-            "not" => {
-                // 1001 -> B-NEG (bitwise negation)
-                // where the following two bits shall be the type, the next two be meaningless,
-                // and the next eight be the source and dest locations
-            }
+            "neg" => try_do!(self.parse_and_emit_unop(&mut items, 0b1000)),
+            "not" => try_do!(self.parse_and_emit_unop(&mut items, 0b1001)),
             "input" => {
                 try_do!(items.next());
                 let location = try_do!(Self::parse_location(items.next()));
@@ -192,25 +195,38 @@ impl CasmAssembler {
         Some(())
     }
 
+    fn parse_and_emit_unop<'a>(&mut self, items: &mut impl Iterator<Item = &'a str>, opcode: u8) -> Option<()> {
+        let ty = try_do!(Self::parse_type(items.next()));
+        let dst = try_do!(Self::parse_location(items.next()));
+        try_do!(items.next());
+        try_do!(items.next());
+        let src = try_do!(Self::parse_location(items.next()));
+
+        self.output_buffer.push((opcode << 4) | (ty << 2));
+        self.output_buffer.push((src << 4) | dst);
+
+        Some(())
+    }
+
     fn parse_integral_value(&self, x: Option<&str>) -> Option<u32> {
         let x = try_do!(x);
 
         if let Ok(value) = x.parse::<u32>() {
-            return Some(value)
+            return Some(value);
         }
         if let Ok(value) = x.parse::<i32>() {
-            return Some(value as u32)
+            return Some(value as u32);
         }
         if x.starts_with("0x") {
             if let Ok(value) = u32::from_str_radix(&x[2..], 16) {
-                return Some(value)
+                return Some(value);
             }
         }
 
         None
     }
 
-    fn emit_arithmetic_instruction<'a>(
+    fn parse_and_emit_binop<'a>(
         &mut self,
         items: &mut impl Iterator<Item = &'a str>,
         byte: u8,

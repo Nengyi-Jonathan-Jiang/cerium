@@ -1,6 +1,5 @@
-use std::fmt::{Debug, Display, Formatter};
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
-use crate::cerium_vm::memory_buffer::Endianness;
+use std::fmt::{Debug, Formatter};
+use std::ops::{Add, Sub};
 
 pub type CeWord = u32;
 pub type CeInt32 = i32;
@@ -8,17 +7,8 @@ pub type CeInt16 = i16;
 pub type CeInt8 = i8;
 pub type CeFloat = f32;
 
-pub trait CeriumType: Copy + PartialEq + Add + Sub + Mul + Div + Rem + Neg + PartialEq + PartialOrd + From<i8> + Endianness + Display {}
-
-impl CeriumType for CeInt8 {}
-
-impl CeriumType for CeInt16 {}
-
-impl CeriumType for CeInt32 {}
-
-impl CeriumType for CeFloat {}
-
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
+#[repr(transparent)]
 pub struct CeriumSize(CeWord);
 
 impl Add for CeriumSize {
@@ -50,6 +40,7 @@ impl Sub for CeriumSize {
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
+#[repr(transparent)]
 pub struct CeriumPtr(CeWord);
 
 impl CeriumPtr {

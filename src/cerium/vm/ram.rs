@@ -1,8 +1,8 @@
 use super::growable_memory::GrowableMemoryBlock;
-use crate::cerium_vm::allocator::Allocator;
-use crate::cerium_vm::cerium_types::{CeriumPtr, CeriumSize};
-use crate::cerium_vm::{CeWord, CeriumType};
-use crate::cerium_vm::memory_buffer::MemoryBufferPtr;
+use super::allocator::Allocator;
+use super::types::{CeriumPtr, CeriumSize};
+use super::{CeWord};
+use crate::cerium::memory_buffer::{Endianness, MemoryBufferPtr};
 
 #[derive(Default)]
 pub struct CeriumRAM {
@@ -39,7 +39,7 @@ impl CeriumRAM {
         }
     }
 
-    pub fn at<T: CeriumType>(&mut self, ptr: CeriumPtr) -> Result<MemoryBufferPtr<T>, String> {
+    pub fn at<T: Endianness>(&mut self, ptr: CeriumPtr) -> Result<MemoryBufferPtr<T>, String> {
         let mem_ptr = Self::ptr_to_mem_ptr(ptr);
         if Self::is_heap_ptr(ptr) {
             self.heap_memory.at(mem_ptr.into())

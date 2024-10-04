@@ -2,12 +2,11 @@ use std::env::args;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-use crate::cerium_assembler::CasmAssembler;
-use crate::cerium_vm::{CeriumVM};
+pub use crate::cerium::assembler::CasmAssembler;
+pub use crate::cerium::vm::{CeriumVM};
 
-mod cerium_vm;
 mod util;
-mod cerium_assembler;
+mod cerium;
 
 fn main() {
     let mut args = args().skip(1);

@@ -32,10 +32,30 @@ impl MemoryBuffer {
     pub fn new() -> MemoryBuffer { Default::default() }
     pub fn size(&self) -> usize { self.memory.len() }
     pub fn resize(&mut self, new_size: usize) { self.memory.resize(new_size, 0); }
+    pub fn push(&mut self, byte: u8) {
+        self.memory.push(byte);
+    }
+    pub fn extend(&mut self, bytes: &[u8]) {
+        self.memory.extend_from_slice(bytes);
+    }
 
-    pub unsafe fn get<T: Endianness>(&self, ptr: usize) -> MemoryBufferPtr<T> {
+    pub fn get<T: Endianness>(&self, ptr: usize) -> MemoryBufferPtr<T> {
         assert!(ptr + size_of::<T>() <= self.memory.len(), "Invalid access of memory buffer");
-        MemoryBufferPtr::new(self.memory.as_ptr().add(ptr) as *mut u8)
+        unsafe {
+            MemoryBufferPtr::new(self.memory.as_ptr().add(ptr) as *mut u8)
+        }
+    }
+}
+
+impl Into<Box<[u8]>> for MemoryBuffer {
+    fn into(self) -> Box<[u8]> {
+        self.memory.into_boxed_slice()
+    }
+}
+
+impl<'a> Into<&'a [u8]> for &'a MemoryBuffer {
+    fn into(self) -> &'a [u8] {
+        self.memory.as_slice()
     }
 }
 

@@ -1,5 +1,5 @@
-use crate::cerium_vm::{CeWord, CeriumPtr, CeriumType};
-use crate::cerium_vm::memory_buffer::{MemoryBuffer, MemoryBufferPtr};
+use super::{CeWord, CeriumPtr};
+use crate::cerium::memory_buffer::{Endianness, MemoryBuffer, MemoryBufferPtr};
 
 pub struct GrowableMemoryBlock {
     pub memory: MemoryBuffer,
@@ -13,7 +13,7 @@ impl Default for GrowableMemoryBlock {
 
 impl GrowableMemoryBlock {
     const INITIAL_MEMORY: CeWord = 1 << 8;
-    const MAX_MEMORY: CeWord = 1 << 16;
+    const MAX_MEMORY: CeWord = 1 << 31;
 
     pub fn new() -> Self {
         let mut memory = MemoryBuffer::new();
@@ -36,14 +36,10 @@ impl GrowableMemoryBlock {
         }
     }
 
-    pub fn at<T: CeriumType>(&mut self, ptr: CeriumPtr) -> Result<MemoryBufferPtr<T>, String> {
+    pub fn at<T: Endianness>(&mut self, ptr: CeriumPtr) -> Result<MemoryBufferPtr<T>, String> {
         match self.resize_to_fit(CeWord::from(ptr) + size_of::<T>() as CeWord) {
-            Ok(_) => unsafe {
-                Ok(self.memory.get(CeWord::from(ptr) as usize))
-            }
-            Err(err) => {
-                Err(err)
-            }
+            Ok(_) => Ok(self.memory.get(CeWord::from(ptr) as usize)),
+            Err(err) => Err(err),
         }
     }
 }

@@ -1,11 +1,11 @@
 // #![allow(arithmetic_overflow)]
 
 use std::fmt::LowerHex;
-use crate::cerium_vm::cerium_register::CeriumRegister;
-use crate::cerium_vm::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, CeriumPtr, CeriumRAM, CeriumType};
+use super::register::CeriumRegister;
+use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, CeriumPtr, CeriumRAM};
 use std::ops::*;
 use text_io::read;
-use crate::cerium_vm::memory_buffer::{Endianness, MemoryBuffer, MemoryBufferPtr};
+use crate::cerium::memory_buffer::{Endianness, MemoryBuffer, MemoryBufferPtr};
 
 #[derive(Default)]
 pub struct CeriumVM {
@@ -24,16 +24,16 @@ impl CeriumVM {
         self.instruction_ptr = 0;
     }
 
-    fn get_register<T: CeriumType>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
+    fn get_register<T: Endianness>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
         self.registers.get_mut((bits & 0b111) as usize).unwrap().get()
     }
 
-    fn get_memory<T: CeriumType>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
+    fn get_memory<T: Endianness>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
         let register_value = self.get_register::<CeInt32>(bits).get() as CeWord;
         self.memory.at(CeriumPtr::new(register_value)).unwrap()
     }
 
-    fn get_location<T: CeriumType>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
+    fn get_location<T: Endianness>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
         if (bits & 0b1000) != 0 {
             self.get_memory(bits)
         } else {
@@ -46,7 +46,7 @@ impl CeriumVM {
     }
 
     fn get_next_and_inc_ip<T: Endianness>(&mut self) -> T {
-        let res = unsafe { self.program.get::<T>(self.instruction_ptr as usize).get() };
+        let res = self.program.get::<T>(self.instruction_ptr as usize).get();
         self.instruction_ptr += size_of::<T>() as CeWord;
         res
     }
@@ -174,11 +174,10 @@ impl CeriumVM {
                 0b0101 => {
                     // MEMCPY
                     let b2 = self.get_next_and_inc_ip::<u8>();
-                    let b3 = self.get_next_and_inc_ip::<u8>();
 
+                    let size = self.get_register::<CeInt32>(curr_instruction_byte).get() as CeWord;
                     let src = self.get_register::<CeInt32>(b2 >> 4).get() as CeWord;
                     let dest = self.get_register::<CeInt32>(b2).get() as CeWord;
-                    let size = self.get_register::<CeInt32>(b3 >> 4).get() as CeWord;
 
                     self.memory.memcpy(src.into(), dest.into(), size.into()).unwrap();
                 }
@@ -196,13 +195,30 @@ impl CeriumVM {
                     let src = self.get_register::<CeInt32>(b2 >> 4).get() as CeWord;
                     self.memory.deallocate(src.into()).unwrap();
                 }
-                0b1000 => {
-                    // Arithmetic negation
-                    // TODO
+                0b1000 => { // NEG
+                    let type_part = (curr_instruction_byte >> 2) & 0b11;
+                    let b2 = self.get_next_and_inc_ip::<u8>();
+
+                    match type_part {
+                        0b00 => self.do_unop::<CeInt8>(b2, Neg::neg),
+                        0b01 => self.do_unop::<CeInt16>(b2, Neg::neg),
+                        0b10 => self.do_unop::<CeInt32>(b2, Neg::neg),
+                        0b11 => self.do_unop::<CeFloat>(b2, Neg::neg),
+                        _ => unreachable!()
+                    }
                 }
                 0b1001 => {
                     // Bitwise negation
-                    // TODO
+                    let type_part = (curr_instruction_byte >> 2) & 0b11;
+                    let b2 = self.get_next_and_inc_ip::<u8>();
+
+                    match type_part {
+                        0b00 => self.do_unop::<CeInt8>(b2, Not::not),
+                        0b01 => self.do_unop::<CeInt16>(b2, Not::not),
+                        0b10 => self.do_unop::<CeInt32>(b2, Not::not),
+                        0b11 => panic!("Cannot apply bitwise negation to float"),
+                        _ => unreachable!()
+                    }
                 }
                 0b1010 => {
                     print!("<CeriumVM> Enter a number: ");
@@ -218,7 +234,7 @@ impl CeriumVM {
         }
     }
 
-    fn test_condition<T: CeriumType>(&mut self, b2: u8) -> bool {
+    fn test_condition<T: Endianness + PartialOrd + From<i8>>(&mut self, b2: u8) -> bool {
         let src: T = self.get_location::<T>(b2 >> 4).get();
         match b2 & 0b1110 {
             0b0000 => false,
@@ -233,7 +249,7 @@ impl CeriumVM {
         }
     }
 
-    fn do_binop<T: CeriumType>(&mut self, b2: u8, b3: u8, op: fn(T, T) -> T) {
+    fn do_binop<T: Endianness>(&mut self, b2: u8, b3: u8, op: fn(T, T) -> T) {
         let val1 = self.get_location::<T>(b2 >> 4).get();
         let val2 = self.get_location::<T>(b2).get();
         let res = op(val1, val2);
@@ -242,18 +258,24 @@ impl CeriumVM {
         }
     }
 
-    fn jmp_instr<T: CeriumType>(&mut self, b2: u8, b3: u8) {
+    fn do_unop<T: Endianness>(&mut self, b2: u8, op: fn(T) -> T) {
+        let src = self.get_location::<T>(b2 >> 4).get();
+        let mut dst = self.get_location::<T>(b2);
+        unsafe { dst.write(op(src)) }
+    }
+
+    fn jmp_instr<T: Endianness + PartialOrd + From<i8>>(&mut self, b2: u8, b3: u8) {
         if self.test_condition::<T>(b2) {
             self.instruction_ptr = self.get_word_for_location(b3 >> 4);
         }
     }
 
-    fn cmp_instr<T: CeriumType>(&mut self, b2: u8, b3: u8) {
+    fn cmp_instr<T: Endianness + PartialOrd + From<i8>>(&mut self, b2: u8, b3: u8) {
         let result = self.test_condition::<T>(b2) as i8;
         unsafe { self.get_location::<CeInt8>(b3 >> 4).write(result); }
     }
 
-    fn lod_instr<T: CeriumType + LowerHex>(&mut self, loc: u8, dat: T) {
+    fn lod_instr<T: Endianness>(&mut self, loc: u8, dat: T) {
         unsafe { self.get_location::<T>(loc).write(dat) }
     }
 
