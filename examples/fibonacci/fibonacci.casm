@@ -1,0 +1,162 @@
+// Function calls:
+// [start of stack frame]
+// caller location (4 bytes)
+// arguments (?? bytes)
+// local variables (?? bytes)
+// [end of stack frame, stack pointer points here]
+
+    lod r1 <- PROGRAM_START
+    jmp r1 always
+
+// POW(float* rv, float x, int p)
+POW:
+    lod r6 <- i 8
+    sub i r7 <- sp - r6        // [r7] <- &x
+    mov f r1 <- f @r7          // [r1] <- x
+    lod r6 <- i 4
+    sub i r7 <- sp - r6        // [r7] <- &p
+    mov i r2 <- i @r7          // [r2] <- p
+
+    // Point r7 to the return value
+    lod r6 <- i 12
+    sub i r7 <- sp - r6        // [r7] <- &&rv
+    mov i r7 <- i @r7          // [r7] <- &rv
+
+    // Initialize rv to 1
+
+    lod @r7 <- f 1             // rv <- 1
+
+    // Multiply rv by x, p times
+
+    POW_LOOP:
+        mul f @r7 <- r1 * @r7  // rv <- x * rv
+        lod r6 <- i 1
+        sub i r2 <- r2 - r6    // [r2] <- [r2] - 1
+        lod r6 <- POW_LOOP
+        jmp r6 if i r2 > 0     // repeat if [r2] > 0
+
+    lod r6 <- i 16
+    sub i r1 <- sp - r6
+    jmp @r1 always
+
+// FIB_MATH(float* rv, int n)
+FIB_MATH:
+    // Use math to compute the nth fibonacci number
+    // fib(x) = (phi^x - (-1/phi)^x)/(sqrt 5) where
+    //     phi    =  1.6180339888
+    //     -1/phi = -0.6180339888
+    //     sqrt 5 =  2.2360679775
+    // Luckily, our exponents are integers, so the POW function
+    // works nicely
+
+// FIB_ITER(float* rv, int n)
+FIB_ITER:
+    // Use iteration to compute the nth fibonacci number
+
+// FIB_RECURSE(int* n)
+FIB_RECURSE:
+    // Use recursion to compute the nth fibonacci number
+
+    // First we extract the argument
+
+    lod r6 <- i 12
+    sub i r7 <- sp - r6       // [r7] <- &&n/rv
+    mov i r7 <- i @r7         // [r7] <- &n/rv
+    mov i r1 <- i @r7         // [r1] <- n
+
+    output <- r1
+    output <- sp
+
+    // If n <= 2, return 1
+    lod @r7 <- i 1            // rv <- 1
+    lod r6 <- i 2
+    sub i r1 <- r1 - r6       // [r1] <- n - 2
+    lod r6 <- FIB_RECURSE_RET
+    jmp r6 if i r1 <= 0       // if n - 2 <= 0, return
+
+    // Store l2 <- n - 2, l1 <- n - 1
+    lod r6 <- i 4
+    sub i r7 <- sp - r6       // [r7] <- &l2
+    mov i @r7 <- i r1         // l2 <- n - 2
+    lod r6 <- i 1
+    add i r1 <- r1 + r6       // [r1] <- n - 1
+    lod r6 <- i 8
+    sub i r7 <- sp - r6       // [r7] <- &l1
+    mov i r6 <- i r1          // l1 <- n - 1
+
+    // call FIB (&l2)
+    lod r6 <- FIB_RECURSE_C1
+    mov i @sp <- i r6
+    lod r6 <- i 4
+    add i sp <- sp + r6
+    lod r6 <- i 12
+    sub i r7 <- sp - r6
+    mov i @sp <- i r7
+    lod r6 <- i 12
+    add i sp <- sp + r6
+    lod r6 <- FIB_RECURSE
+    jmp r6 always
+    FIB_RECURSE_C1:
+    lod r6 <- i 16
+    sub i sp <- sp - r6
+
+    // call FIB(&l1)
+    lod r6 <- FIB_RECURSE_C2
+    mov i @sp <- i r6
+    lod r6 <- i 4
+    add i sp <- sp + r6
+    lod r6 <- i 8
+    sub i r7 <- sp - r6
+    mov i @sp <- i r7
+    lod r6 <- i 12
+    add i sp <- sp + r6
+    lod r6 <- FIB_RECURSE
+    jmp r6 always
+    FIB_RECURSE_C2:
+    lod r6 <- i 16
+    sub i sp <- sp - r6
+
+    // Add the two values
+    //
+    lod r6 <- i 12
+    sub i r7 <- sp - r6       // [r7] <- &&rv
+    mov i r7 <- i @r7         // [r7] <- &rv
+    lod @r7 <- i 0
+    //
+    lod r6 <- i 8
+    sub i r1 <- sp - r6        // [r1] <- &l0
+    add i @r7 <- @r7 + @r1     // rv <- rv + l0
+    lod r6 <- i 4
+    sub i r1 <- sp - r6        // [r1] <- &l1
+    add i @r7 <- @r7 + @r1     // rv <- rv + l1
+
+    FIB_RECURSE_RET:
+
+    // pop the stack frame
+    lod r6 <- i 16
+    sub i r1 <- sp - r6         // caller location
+    jmp r1 always             // jump to caller
+
+// Main program
+PROGRAM_START:
+    // Take input
+    input -> r1
+    mov i @sp <- i r1
+    lod r6 <- i 8
+    add i r1 <- sp + r6
+    mov i @r1 <- i sp
+    lod r6 <- i 4
+    add i r1 <- sp + r6
+    lod r6 <- PROGRAM_C1
+    mov i @r1 <- i r6
+
+    lod r6 <- i 20
+    add i sp <- sp + r6
+    lod r6 <- FIB_RECURSE
+    jmp r6 always
+    PROGRAM_C1:
+    lod r6 <- i 20
+    sub i sp <- sp - r6
+    output <- @sp
+
+    halt

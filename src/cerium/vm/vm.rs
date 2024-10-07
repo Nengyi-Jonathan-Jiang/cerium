@@ -130,29 +130,29 @@ impl CeriumVM {
             match instruction_part {
                 0b0000 => { // MOV
                     let b2 = self.get_next_and_inc_ip::<u8>();
-                    let t1 = (curr_instruction_byte >> 2) & 3;
-                    let t2 = curr_instruction_byte & 3;
+                    let src_t = (curr_instruction_byte >> 2) & 0b11;
+                    let dst_t = curr_instruction_byte & 0b11;
 
                     macro_rules! mov_match_case {
-                    (type = $t: ty, $b2: ident, $t2: ident) => {
-                        unsafe {
-                            let val = self.get_location::<$t>($b2 >> 4).get();
-                            match $t2 {
-                                0b00 => self.get_location::<CeInt8>($b2).write((val as CeInt8)),
-                                0b01 => self.get_location::<CeInt16>($b2).write((val as CeInt16)),
-                                0b10 => self.get_location::<CeInt32>($b2).write((val as CeInt32)),
-                                0b11 => self.get_location::<CeFloat>($b2).write((val as CeFloat)),
-                                _ => unreachable!()
+                        (type = $t: ty, $t2: ident, $b2: ident) => {
+                            unsafe {
+                                let val = self.get_location::<$t>($b2 >> 4).get();
+                                match $t2 {
+                                    0b00 => self.get_location::<CeInt8>($b2).write((val as CeInt8)),
+                                    0b01 => self.get_location::<CeInt16>($b2).write((val as CeInt16)),
+                                    0b10 => self.get_location::<CeInt32>($b2).write((val as CeInt32)),
+                                    0b11 => self.get_location::<CeFloat>($b2).write((val as CeFloat)),
+                                    _ => unreachable!()
+                                }
                             }
-                        }
-                    };
-                }
+                        };
+                    }
 
-                    match t1 {
-                        0b00 => mov_match_case!(type = CeInt8, t2, b2),
-                        0b01 => mov_match_case!(type = CeInt16, t2, b2),
-                        0b10 => mov_match_case!(type = CeInt32, t2, b2),
-                        0b11 => mov_match_case!(type = CeFloat, t2, b2),
+                    match src_t {
+                        0b00 => mov_match_case!(type = CeInt8, dst_t, b2),
+                        0b01 => mov_match_case!(type = CeInt16, dst_t, b2),
+                        0b10 => mov_match_case!(type = CeInt32, dst_t, b2),
+                        0b11 => mov_match_case!(type = CeFloat, dst_t, b2),
                         _ => unreachable!()
                     }
                 }
@@ -175,24 +175,24 @@ impl CeriumVM {
                     // MEMCPY
                     let b2 = self.get_next_and_inc_ip::<u8>();
 
-                    let size = self.get_register::<CeInt32>(curr_instruction_byte).get() as CeWord;
-                    let src = self.get_register::<CeInt32>(b2 >> 4).get() as CeWord;
-                    let dest = self.get_register::<CeInt32>(b2).get() as CeWord;
+                    let size = self.get_location::<CeInt32>(curr_instruction_byte).get() as CeWord;
+                    let src = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
+                    let dest = self.get_location::<CeInt32>(b2).get() as CeWord;
 
                     self.memory.memcpy(src.into(), dest.into(), size.into()).unwrap();
                 }
                 0b0110 => { // NEW
                     let b2 = self.get_next_and_inc_ip::<u8>();
-                    let size = self.get_register::<CeInt32>(b2 >> 4).get() as CeWord;
+                    let size = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
                     let res = CeWord::from(self.memory.allocate(size).unwrap());
 
                     unsafe {
-                        self.get_register::<CeInt32>(b2).write(res as CeInt32);
+                        self.get_location::<CeInt32>(b2).write(res as CeInt32);
                     }
                 }
                 0b0111 => { // DEL
                     let b2 = self.get_next_and_inc_ip::<u8>();
-                    let src = self.get_register::<CeInt32>(b2 >> 4).get() as CeWord;
+                    let src = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
                     self.memory.deallocate(src.into()).unwrap();
                 }
                 0b1000 => { // NEG
@@ -223,11 +223,11 @@ impl CeriumVM {
                 0b1010 => {
                     print!("<CeriumVM> Enter a number: ");
                     unsafe {
-                        self.get_register::<CeInt32>(curr_instruction_byte).write(read!());
+                        self.get_location::<CeInt32>(curr_instruction_byte).write(read!());
                     }
                 }
                 0b1011 => {
-                    println!("{}", self.get_register::<CeInt32>(curr_instruction_byte).get());
+                    println!("{}", self.get_location::<CeInt32>(curr_instruction_byte).get());
                 }
                 _ => unreachable!()
             }

@@ -87,11 +87,11 @@ impl CasmAssembler {
                 self.output_buffer.push(dest_location << 4);
             }
             "mov" => {
-                let src_type = try_do!(Self::parse_type(items.next()));
-                let src_loc = try_do!(Self::parse_location(items.next()));
-                try_do!(items.next());
                 let dst_type = try_do!(Self::parse_type(items.next()));
                 let dst_loc = try_do!(Self::parse_location(items.next()));
+                try_do!(items.next());
+                let src_type = try_do!(Self::parse_type(items.next()));
+                let src_loc = try_do!(Self::parse_location(items.next()));
 
                 self.output_buffer.push((src_type << 2) | dst_type);
                 self.output_buffer.push((src_loc << 4) | dst_loc);
@@ -314,6 +314,6 @@ impl CasmAssembler {
     }
 
     fn is_label_character(c: char) -> bool {
-        c.is_uppercase() || c == '_'
+        c.is_numeric() || c.is_uppercase() || c == '_'
     }
 }

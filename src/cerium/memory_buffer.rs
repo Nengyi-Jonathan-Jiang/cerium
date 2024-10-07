@@ -1,3 +1,5 @@
+use crate::cerium::vm::CeWord;
+
 pub struct MemoryBufferPtr<T: Endianness> {
     ptr: *mut T,
 }
@@ -31,10 +33,15 @@ impl From<&[u8]> for MemoryBuffer {
 impl MemoryBuffer {
     pub fn new() -> MemoryBuffer { Default::default() }
     pub fn size(&self) -> usize { self.memory.len() }
-    pub fn resize(&mut self, new_size: usize) { self.memory.resize(new_size, 0); }
+    
+    pub fn resize(&mut self, new_size: usize) {
+        self.memory.resize(new_size, 0);
+    }
+    
     pub fn push(&mut self, byte: u8) {
         self.memory.push(byte);
     }
+    
     pub fn extend(&mut self, bytes: &[u8]) {
         self.memory.extend_from_slice(bytes);
     }

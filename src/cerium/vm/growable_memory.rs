@@ -12,8 +12,8 @@ impl Default for GrowableMemoryBlock {
 }
 
 impl GrowableMemoryBlock {
-    const INITIAL_MEMORY: CeWord = 1 << 8;
-    const MAX_MEMORY: CeWord = 1 << 31;
+    const INITIAL_MEMORY: CeWord = 0;
+    const MAX_MEMORY: CeWord = 1 << 9;
 
     pub fn new() -> Self {
         let mut memory = MemoryBuffer::new();
