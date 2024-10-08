@@ -1,7 +1,7 @@
 use super::types::{CeriumPtr, CeriumSize};
+use super::CeWord;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Formatter};
-use super::CeWord;
 
 #[derive(Copy, Clone, Debug)]
 struct MemorySpan {

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::try_do;
+use std::collections::HashMap;
 
 pub struct CasmAssembler {
     output_buffer: Vec<u8>,

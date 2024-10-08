@@ -64,9 +64,6 @@ FIB_RECURSE:
     mov i r7 <- i @r7         // [r7] <- &n/rv
     mov i r1 <- i @r7         // [r1] <- n
 
-    output <- r1
-    output <- sp
-
     // If n <= 2, return 1
     lod @r7 <- i 1            // rv <- 1
     lod r6 <- i 2
@@ -78,11 +75,12 @@ FIB_RECURSE:
     lod r6 <- i 4
     sub i r7 <- sp - r6       // [r7] <- &l2
     mov i @r7 <- i r1         // l2 <- n - 2
+
     lod r6 <- i 1
     add i r1 <- r1 + r6       // [r1] <- n - 1
     lod r6 <- i 8
     sub i r7 <- sp - r6       // [r7] <- &l1
-    mov i r6 <- i r1          // l1 <- n - 1
+    mov i @r7 <- i r1          // l1 <- n - 1
 
     // call FIB (&l2)
     lod r6 <- FIB_RECURSE_C1
@@ -135,7 +133,7 @@ FIB_RECURSE:
     // pop the stack frame
     lod r6 <- i 16
     sub i r1 <- sp - r6         // caller location
-    jmp r1 always             // jump to caller
+    jmp @r1 always             // jump to caller
 
 // Main program
 PROGRAM_START:

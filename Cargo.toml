@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 text_io = "0.1.12"
+
+[profile.release]
+debug = 1

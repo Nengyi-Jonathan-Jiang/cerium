@@ -1,9 +1,9 @@
+pub use crate::cerium::assembler::CasmAssembler;
+pub use crate::cerium::vm::CeriumVM;
 use std::env::args;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-pub use crate::cerium::assembler::CasmAssembler;
-pub use crate::cerium::vm::{CeriumVM};
 
 mod util;
 mod cerium;

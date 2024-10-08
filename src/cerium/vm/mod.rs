@@ -5,6 +5,6 @@ mod allocator;
 mod types;
 mod register;
 
-pub use vm::*;
 pub use ram::*;
 pub use types::*;
+pub use vm::*;
