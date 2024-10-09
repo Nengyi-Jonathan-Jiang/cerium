@@ -1,4 +1,5 @@
 pub mod vm;
 pub mod assembler;
-mod cerium_instructions;
+mod instruction;
 mod memory_buffer;
+mod compiler;

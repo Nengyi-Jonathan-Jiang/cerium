@@ -1,28 +1,28 @@
 use super::allocator::Allocator;
 use super::growable_memory::GrowableMemoryBlock;
-use super::types::{CeriumPtr, CeriumSize};
+use super::types::{Pointer, Size};
 use super::CeWord;
 use crate::cerium::memory_buffer::{EndianConversion, MemoryBufferPtr};
 
 #[derive(Default)]
-pub struct CeriumRAM {
+pub struct RAM {
     stack_memory: GrowableMemoryBlock,
     heap_memory: GrowableMemoryBlock,
     allocator: Allocator,
 }
 
-impl CeriumRAM {
+impl RAM {
     const HEAP_PTR_BIT: CeWord = (1 << (size_of::<CeWord>() * 8 - 1)) as CeWord;
 
-    fn is_heap_ptr(ptr: CeriumPtr) -> bool {
+    fn is_heap_ptr(ptr: Pointer) -> bool {
         (CeWord::from(ptr) & Self::HEAP_PTR_BIT) != 0
     }
 
-    fn ptr_to_mem_ptr(ptr: CeriumPtr) -> CeriumPtr {
+    fn ptr_to_mem_ptr(ptr: Pointer) -> Pointer {
         (CeWord::from(ptr) & !Self::HEAP_PTR_BIT).into()
     }
 
-    fn mem_ptr_to_ptr(ptr: CeriumPtr, is_heap: bool) -> CeriumPtr {
+    fn mem_ptr_to_ptr(ptr: Pointer, is_heap: bool) -> Pointer {
         if is_heap {
             (CeWord::from(ptr) | Self::HEAP_PTR_BIT).into()
         } else {
@@ -30,7 +30,7 @@ impl CeriumRAM {
         }
     }
 
-    fn resize_mem_to_fit(&mut self, ptr: CeriumPtr) -> Result<(), String> {
+    fn resize_mem_to_fit(&mut self, ptr: Pointer) -> Result<(), String> {
         let mem_ptr = Self::ptr_to_mem_ptr(ptr);
         if Self::is_heap_ptr(mem_ptr) {
             self.heap_memory.resize_to_fit(mem_ptr.into())
@@ -39,7 +39,7 @@ impl CeriumRAM {
         }
     }
 
-    pub fn at<T: EndianConversion>(&mut self, ptr: CeriumPtr) -> Result<MemoryBufferPtr<T>, String> {
+    pub fn at<T: EndianConversion>(&mut self, ptr: Pointer) -> Result<MemoryBufferPtr<T>, String> {
         let mem_ptr = Self::ptr_to_mem_ptr(ptr);
         if Self::is_heap_ptr(ptr) {
             self.heap_memory.at(mem_ptr.into())
@@ -48,8 +48,8 @@ impl CeriumRAM {
         }
     }
 
-    pub fn allocate(&mut self, size: CeWord) -> Result<CeriumPtr, String> {
-        let size: CeriumSize = size.into();
+    pub fn allocate(&mut self, size: CeWord) -> Result<Pointer, String> {
+        let size: Size = size.into();
 
         if CeWord::from(size) == 0 {
             return Err("CeriumVM error: allocation must not be empty".to_owned());
@@ -63,7 +63,7 @@ impl CeriumRAM {
         Ok(Self::mem_ptr_to_ptr(heap_ptr, true))
     }
 
-    pub fn deallocate(&mut self, ptr: CeriumPtr) -> Result<(), String> {
+    pub fn deallocate(&mut self, ptr: Pointer) -> Result<(), String> {
         if !Self::is_heap_ptr(ptr) {
             return Err("CeriumVM Error: Attempting to deallocate non-heap pointer".to_owned());
         }
@@ -71,7 +71,7 @@ impl CeriumRAM {
         self.allocator.deallocate(heap_ptr)
     }
     
-    pub fn memcpy(&mut self, src: CeriumPtr, dst: CeriumPtr, length: CeriumSize) -> Result<(), String> {
+    pub fn memcpy(&mut self, src: Pointer, dst: Pointer, length: Size) -> Result<(), String> {
         if let Err(err) = self.resize_mem_to_fit(src + length) {
             return Err(err);
         }

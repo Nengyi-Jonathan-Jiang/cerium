@@ -1,4 +1,4 @@
-use super::{CeWord, CeriumPtr};
+use super::{CeWord, Pointer};
 use crate::cerium::memory_buffer::{EndianConversion, MemoryBuffer, MemoryBufferPtr};
 
 pub struct GrowableMemoryBlock {
@@ -38,7 +38,7 @@ impl GrowableMemoryBlock {
     }
 
     #[inline(always)]
-    pub fn at<T: EndianConversion>(&mut self, ptr: CeriumPtr) -> Result<MemoryBufferPtr<T>, String> {
+    pub fn at<T: EndianConversion>(&mut self, ptr: Pointer) -> Result<MemoryBufferPtr<T>, String> {
         match self.resize_to_fit(CeWord::from(ptr) + size_of::<T>() as CeWord) {
             Ok(_) => Ok(self.memory.get(CeWord::from(ptr) as usize)),
             Err(err) => Err(err),

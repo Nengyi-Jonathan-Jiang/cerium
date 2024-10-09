@@ -1,16 +1,16 @@
-use super::types::{CeriumPtr, CeriumSize};
+use super::types::{Pointer, Size};
 use super::CeWord;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Formatter};
 
 #[derive(Copy, Clone, Debug)]
 struct MemorySpan {
-    start: CeriumPtr,
-    end: CeriumPtr,
+    start: Pointer,
+    end: Pointer,
 }
 
 impl MemorySpan {
-    fn size(&self) -> CeriumSize {
+    fn size(&self) -> Size {
         self.end - self.start
     }
 }
@@ -25,20 +25,20 @@ enum MemoryBlockStatus {
 struct MemoryBlockInfo {
     span: MemorySpan,
     status: MemoryBlockStatus,
-    prev_block_start_ptr: Option<CeriumPtr>,
+    prev_block_start_ptr: Option<Pointer>,
 }
 
 #[derive(Default)]
 pub struct Allocator {
-    blocks: BTreeMap<CeriumPtr, MemoryBlockInfo>,
+    blocks: BTreeMap<Pointer, MemoryBlockInfo>,
 
     free_blocks_for_size: FreeBlocksMap,
 
-    last_heap_ptr: CeriumPtr,
+    last_heap_ptr: Pointer,
 }
 
 impl Allocator {
-    fn mark_block_free(&mut self, ptr: CeriumPtr) -> MemoryBlockInfo {
+    fn mark_block_free(&mut self, ptr: Pointer) -> MemoryBlockInfo {
         let curr_block = self.blocks.get_mut(&ptr).expect("Internal CeriumVM error: Invalid pointer");
         curr_block.status = MemoryBlockStatus::FREE;
 
@@ -47,7 +47,7 @@ impl Allocator {
         curr_block
     }
 
-    fn mark_block_used(&mut self, ptr: CeriumPtr) -> MemoryBlockInfo {
+    fn mark_block_used(&mut self, ptr: Pointer) -> MemoryBlockInfo {
         let curr_block = self.blocks.get_mut(&ptr).expect("Internal CeriumVM error: Invalid pointer");
         curr_block.status = MemoryBlockStatus::USED;
 
@@ -138,7 +138,7 @@ impl Allocator {
     fn split_free_block(
         &mut self,
         block: MemoryBlockInfo,
-        left_size: CeriumSize,
+        left_size: Size,
     ) -> (MemoryBlockInfo, MemoryBlockInfo) {
         if block.status != MemoryBlockStatus::FREE {
             panic!("Internal CeriumVM Error: can only split a free block");
@@ -171,7 +171,7 @@ impl Allocator {
         (left_block, right_block)
     }
 
-    pub fn allocate(&mut self, alloc_size: CeriumSize) -> CeriumPtr {
+    pub fn allocate(&mut self, alloc_size: Size) -> Pointer {
         // Try to find a free block of the right size
         if let Some(mut block) = self.free_blocks_for_size.get_first_ptr_with_min_size(alloc_size).and_then(|x| self.blocks.get(&x).cloned()) {
             // Split the block
@@ -197,7 +197,7 @@ impl Allocator {
         start
     }
 
-    pub fn deallocate(&mut self, ptr: CeriumPtr) -> Result<(), String> {
+    pub fn deallocate(&mut self, ptr: Pointer) -> Result<(), String> {
         if let Some(block) = self.blocks.get(&ptr).cloned() {
             if block.status == MemoryBlockStatus::USED {
                 let block = self.mark_block_free(ptr);
@@ -263,20 +263,20 @@ impl Debug for Allocator {
 
 #[derive(Default, Debug)]
 pub struct FreeBlocksMap {
-    backing_map: BTreeMap<CeriumSize, BTreeSet<CeriumPtr>>,
+    backing_map: BTreeMap<Size, BTreeSet<Pointer>>,
 }
 
 impl FreeBlocksMap
 {
-    pub fn get_ptrs_with_size(&mut self, size: CeriumSize) -> &mut BTreeSet<CeriumPtr> {
+    pub fn get_ptrs_with_size(&mut self, size: Size) -> &mut BTreeSet<Pointer> {
         self.backing_map.entry(size).or_insert_with(BTreeSet::new)
     }
 
-    pub fn insert(&mut self, key: CeriumSize, value: CeriumPtr) {
+    pub fn insert(&mut self, key: Size, value: Pointer) {
         self.get_ptrs_with_size(key).insert(value);
     }
 
-    pub fn remove(&mut self, size: CeriumSize, ptr: CeriumPtr) {
+    pub fn remove(&mut self, size: Size, ptr: Pointer) {
         if let Some(set) = self.backing_map.get_mut(&size) {
             set.remove(&ptr);
 
@@ -286,23 +286,7 @@ impl FreeBlocksMap
         }
     }
 
-    pub fn get_first_value_for(&mut self, key: CeriumSize) -> Option<CeriumPtr> {
-        if let Some(set) = self.backing_map.get_mut(&key) {
-            return set.first().cloned();
-        }
-        None
-    }
-
-    pub fn next_higher_key(&self, lower_bound: CeriumSize) -> Option<CeriumSize> {
-        let entry = self.backing_map.range(lower_bound..).next();
-        if let Some((key, _)) = entry {
-            Some(*key)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_first_ptr_with_min_size(&self, minimum_size: CeriumSize) -> Option<CeriumPtr> {
+    pub fn get_first_ptr_with_min_size(&self, minimum_size: Size) -> Option<Pointer> {
         self.backing_map.range(minimum_size..).next()
             .and_then(|(key, _)| self.backing_map.get(key))
             .and_then(|set| set.first().cloned())

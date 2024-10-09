@@ -1,5 +1,8 @@
 use crate::try_do;
 use std::collections::HashMap;
+use std::mem;
+use crate::cerium::instruction::Instruction;
+use crate::cerium::instruction::instruction_parts::{BinOp, UnOp, Condition, Location, Register, Type};
 
 pub struct CasmAssembler {
     output_buffer: Vec<u8>,
@@ -34,183 +37,179 @@ impl CasmAssembler {
     fn parse_line<'a>(&mut self, mut items: impl Iterator<Item = &'a str>) -> Option<()> {
         let command = items.next().unwrap();
 
+        use BinOp::*;
+        use UnOp::*;
+
         match command {
             // Labels
             _ if command.chars().last().unwrap() == ':' && command.chars().rev().skip(1).all(
                 Self::is_label_character
             ) => {
                 self.set_label_value(command);
+                return Some(());
             }
 
             // Arithmetic operations
-            "xor" => try_do!(self.parse_and_emit_binop(&mut items, 0b0001)),
-            "or" => try_do!(self.parse_and_emit_binop(&mut items,  0b0010)),
-            "and" => try_do!(self.parse_and_emit_binop(&mut items, 0b0011)),
-            "shl" => try_do!(self.parse_and_emit_binop(&mut items, 0b0110)),
-            "shr" => try_do!(self.parse_and_emit_binop(&mut items, 0b0111)),
-            "mul" => try_do!(self.parse_and_emit_binop(&mut items, 0b1001)),
-            "add" => try_do!(self.parse_and_emit_binop(&mut items, 0b1010)),
-            "sub" => try_do!(self.parse_and_emit_binop(&mut items, 0b1011)),
-            "div" => try_do!(self.parse_and_emit_binop(&mut items, 0b1100)),
-            "mod" => try_do!(self.parse_and_emit_binop(&mut items, 0b1101)),
+            "xor" => self.parse_and_emit_binop(&mut items, XOR)?,
+            "or" => self.parse_and_emit_binop(&mut items, OR)?,
+            "and" => self.parse_and_emit_binop(&mut items, AND)?,
+            "shl" => self.parse_and_emit_binop(&mut items, SHL)?,
+            "shr" => self.parse_and_emit_binop(&mut items, SHR)?,
+            "mul" => self.parse_and_emit_binop(&mut items, MUL)?,
+            "add" => self.parse_and_emit_binop(&mut items, ADD)?,
+            "sub" => self.parse_and_emit_binop(&mut items, SUB)?,
+            "div" => self.parse_and_emit_binop(&mut items, DIV)?,
+            "mod" => self.parse_and_emit_binop(&mut items, MOD)?,
 
             // Other operations
             "jmp" => {
-                let target_location = try_do!(Self::parse_location(items.next()));
-                match try_do!(items.next()) {
-                    "always" => {
-                        self.output_buffer.push(0b11_00_1111_u8);
-                        self.output_buffer.push(0b0000_111_0_u8);
-                        self.output_buffer.push(target_location << 4);
-                    }
-                    "if" => {
-                        let source_type = try_do!(Self::parse_type(items.next()));
-                        let source_location = try_do!(Self::parse_location(items.next()));
-                        let comparison_condition = try_do!(Self::parse_condition(items.next()));
-                        self.output_buffer.push(0b11_00_1111_u8 | (source_type << 4));
-                        self.output_buffer.push((source_location << 4) | comparison_condition);
-                        self.output_buffer.push(target_location << 4);
-                    }
+                let tgt = Self::parse_location(items.next()?)?;
+                let (ty, src, cnd) = match items.next()? {
+                    "always" => (
+                        Type::Int8,
+                        Location { register: Register::SP, indirect: false },
+                        Condition::ALWAYS
+                    ),
+                    "if" => (
+                        Self::parse_ty(items.next()?)?,
+                        Self::parse_location(items.next()?)?,
+                        Self::parse_condition(items.next()?)?
+                    ),
                     _ => return None
-                }
+                };
+                Instruction::Jmp { ty, src, tgt, cnd }
             }
             "cmp" => {
-                let dest_location = try_do!(Self::parse_location(items.next()));
+                let dst = Self::parse_location(items.next()?)?;
 
-                try_do!(items.next());
+                items.next()?;
 
-                let source_type = try_do!(Self::parse_type(items.next()));
-                let source_location = try_do!(Self::parse_location(items.next()));
-                let comparison_condition = try_do!(Self::parse_condition(items.next()));
-                self.output_buffer.push(0b11_00_1110_u8 | (source_type << 4));
-                self.output_buffer.push((source_location << 4) | comparison_condition);
-                self.output_buffer.push(dest_location << 4);
+                let ty = Self::parse_ty(items.next()?)?;
+                let src = Self::parse_location(items.next()?)?;
+                let cnd = Self::parse_condition(items.next()?)?;
+
+                Instruction::Cmp { ty, src, dst, cnd }
             }
             "mov" => {
-                let dst_type = try_do!(Self::parse_type(items.next()));
-                let dst_loc = try_do!(Self::parse_location(items.next()));
-                try_do!(items.next());
-                let src_type = try_do!(Self::parse_type(items.next()));
-                let src_loc = try_do!(Self::parse_location(items.next()));
+                let dst_ty = Self::parse_ty(items.next()?)?;
+                let dst = Self::parse_location(items.next()?)?;
+                items.next()?;
+                let src_ty = Self::parse_ty(items.next()?)?;
+                let src = Self::parse_location(items.next()?)?;
 
-                self.output_buffer.push((src_type << 2) | dst_type);
-                self.output_buffer.push((src_loc << 4) | dst_loc);
+                Instruction::Mov { src_ty, dst_ty, src, dst }
             }
             "lod" => {
-                let dest = try_do!(Self::parse_location(items.next()));
-                try_do!(items.next());
-                match try_do!(items.next()) {
+                let dest = Self::parse_location(items.next()?)?;
+                items.next()?;
+                match items.next()? {
                     "b" => {
-                        let value: u32 = try_do!(self.parse_integral_value(items.next()));
+                        let value = self.parse_integral_value(items.next()?)?;
                         if (value & 0xffffff00) != 0 && (value & 0xffffff00) != 0xffffff00 {
                             return None;
                         }
 
-                        self.output_buffer.push(0b00010000 | dest);
-                        self.output_buffer.push(value as u8);
+                        Instruction::Lod8(dest, value as u8)
                     }
                     "s" => {
-                        let value: u32 = try_do!(self.parse_integral_value(items.next()));
+                        let value = self.parse_integral_value(items.next()?)?;
                         if (value & 0xffff0000) != 0 && (value & 0xffff0000) != 0xffff0000 {
                             return None;
                         }
 
-                        self.output_buffer.push(0b00100000 | dest);
-                        self.output_buffer.push(value as u8);
-                        self.output_buffer.push((value >> 8) as u8);
+                        Instruction::Lod16(dest, value as u16)
                     }
                     "i" => {
-                        let value: u32 = try_do!(self.parse_integral_value(items.next()));
+                        let value = self.parse_integral_value(items.next()?)?;
 
-                        self.output_buffer.push(0b00110000 | dest);
-                        self.output_buffer.push((value >> 24) as u8);
-                        self.output_buffer.push((value >> 16) as u8);
-                        self.output_buffer.push((value >> 8) as u8);
-                        self.output_buffer.push(value as u8);
+                        Instruction::Lod32(dest, value)
                     }
                     "f" => {
                         let value: f32 = try_do!(result items.next()?.parse());
-                        let value = unsafe { *(&value as *const f32 as *const u32) };
-                        self.output_buffer.push(0b00110000 | dest);
-                        self.output_buffer.push((value >> 24) as u8);
-                        self.output_buffer.push((value >> 16) as u8);
-                        self.output_buffer.push((value >> 8) as u8);
-                        self.output_buffer.push(value as u8);
+                        let value = unsafe { mem::transmute::<f32, u32>(value) };
+
+                        Instruction::Lod32(dest, value)
                     }
                     label => {
-                        if !label.chars().all(Self::is_label_character) { return None; }
+                        if !label.chars().all(Self::is_label_character) {
+                            return None;
+                        }
 
-                        self.output_buffer.push(0b00110000 | dest);
                         self.label_placeholder_locations.push((
-                            self.output_buffer.len(),
+                            self.output_buffer.len() + 1,
                             label.to_owned()
                         ));
 
-                        // Push placeholder bytes for now
-                        self.output_buffer.extend_from_slice(&[0, 0, 0, 0]);
+                        Instruction::Lod32(dest, 0)
                     }
                 }
             }
             "halt" => {
-                self.output_buffer.push(0b01000000);
+                Instruction::Halt
             }
             "memcpy" => {
                 // memcpy dst <- src ; size
-                let dst = try_do!(Self::parse_location(items.next()));
-                try_do!(items.next());
-                let src = try_do!(Self::parse_location(items.next()));
-                try_do!(items.next());
-                let size = try_do!(Self::parse_location(items.next()));
+                let dst = Self::parse_location(items.next()?)?;
+                items.next()?;
+                let src = Self::parse_location(items.next()?)?;
+                items.next()?;
+                let size = Self::parse_location(items.next()?)?;
 
-                self.output_buffer.push(0b01010000 | size);
-                self.output_buffer.push((src << 4) | dst);
+                Instruction::Memcpy { src, dst, size }
             }
             "new" => {
-                let dst = try_do!(Self::parse_location(items.next()));
-                try_do!(items.next());
-                let size = try_do!(Self::parse_location(items.next()));
+                let dst = Self::parse_location(items.next()?)?;
+                items.next()?;
+                let size = Self::parse_location(items.next()?)?;
 
-                self.output_buffer.push(0b01100000);
-                self.output_buffer.push((size << 4) | dst);
+                Instruction::New { size, dst }
             }
             "del" => {
-                let src = try_do!(Self::parse_location(items.next()));
-                self.output_buffer.push(0b01110000 | src);
+                let src = Self::parse_location(items.next()?)?;
+                Instruction::Del { src }
             }
-            "neg" => try_do!(self.parse_and_emit_unop(&mut items, 0b1000)),
-            "not" => try_do!(self.parse_and_emit_unop(&mut items, 0b1001)),
+            "neg" => self.parse_and_emit_unop(&mut items, NEG)?,
+            "not" => self.parse_and_emit_unop(&mut items, NOT)?,
             "input" => {
-                try_do!(items.next());
-                let location = try_do!(Self::parse_location(items.next()));
-                self.output_buffer.push(0b10100000 | location);
+                items.next()?;
+                let location = Self::parse_location(items.next()?)?;
+                Instruction::Input(location)
             }
             "output" => {
-                try_do!(items.next());
-                let location = try_do!(Self::parse_location(items.next()));
-                self.output_buffer.push(0b10110000 | location);
+                items.next()?;
+                let location = Self::parse_location(items.next()?)?;
+                Instruction::Output(location)
             }
             _ => return None
-        }
+        }.output_to(|x| self.write(x));
 
         Some(())
     }
 
-    fn parse_and_emit_unop<'a>(&mut self, items: &mut impl Iterator<Item = &'a str>, opcode: u8) -> Option<()> {
-        let ty = try_do!(Self::parse_type(items.next()));
-        let dst = try_do!(Self::parse_location(items.next()));
-        try_do!(items.next());
-        try_do!(items.next());
-        let src = try_do!(Self::parse_location(items.next()));
-
-        self.output_buffer.push((opcode << 4) | (ty << 2));
-        self.output_buffer.push((src << 4) | dst);
-
-        Some(())
+    fn write(&mut self, x: u8) {
+        self.output_buffer.push(x)
     }
 
-    fn parse_integral_value(&self, x: Option<&str>) -> Option<u32> {
-        let x = try_do!(x);
+    fn parse_and_emit_unop<'a>(
+        &mut self,
+        items: &mut impl Iterator<Item = &'a str>,
+        op: UnOp,
+    ) -> Option<Instruction> {
+        let ty = Self::parse_ty(items.next()?)?;
+        let dst = Self::parse_location(items.next()?)?;
+        items.next()?;
+        items.next()?;
+        let src = Self::parse_location(items.next()?)?;
 
+        Some(Instruction::UnOp {
+            op,
+            ty,
+            src,
+            dst,
+        })
+    }
+
+    fn parse_integral_value(&self, x: &str) -> Option<u32> {
         if let Ok(value) = x.parse::<u32>() {
             return Some(value);
         }
@@ -229,33 +228,25 @@ impl CasmAssembler {
     fn parse_and_emit_binop<'a>(
         &mut self,
         items: &mut impl Iterator<Item = &'a str>,
-        byte: u8,
-    ) -> Option<()> {
-        let x = items.next();
-        let b1: u8 = 0b11000000u8 | (try_do!(Self::parse_type(x)) << 4) | byte;
+        op: BinOp,
+    ) -> Option<Instruction> {
+        let ty = Self::parse_ty(items.next()?)?;
+        let dst = Self::parse_location(items.next()?)?;
+        items.next()?;
+        let src1 = Self::parse_location(items.next()?)?;
+        items.next()?;
+        let src2 = Self::parse_location(items.next()?)?;
 
-        let dst_loc = try_do!(Self::parse_location(items.next()));
-        try_do!(items.next());
-        let src_loc_1 = try_do!(Self::parse_location(items.next()));
-        try_do!(items.next());
-        let src_loc_2 = try_do!(Self::parse_location(items.next()));
-
-        let b2 = (src_loc_1 << 4) | src_loc_2;
-        let b3 = dst_loc << 4;
-
-        self.output_buffer.push(b1);
-        self.output_buffer.push(b2);
-        self.output_buffer.push(b3);
-
-        Some(())
+        Some(Instruction::BinOp { op, ty, src1, src2, dst })
     }
 
-    fn parse_type(x: Option<&str>) -> Option<u8> {
-        Some(match try_do!(x) {
-            "b" => 0b00u8,
-            "s" => 0b01u8,
-            "i" => 0b10u8,
-            "f" => 0b11u8,
+    fn parse_ty(x: &str) -> Option<Type> {
+        use Type::*;
+        Some(match x {
+            "b" => Int8,
+            "s" => Int16,
+            "i" => Int32,
+            "f" => Float,
             _ => return None
         })
     }
@@ -265,36 +256,38 @@ impl CasmAssembler {
         self.label_locations.insert(label_name, self.output_buffer.len());
     }
 
-    fn parse_location(location: Option<&str>) -> Option<u8> {
-        Some(match try_do!(location) {
-            "sp" => 0b0000,
-            "@sp" => 0b1000,
-            "r1" => 0b0001,
-            "@r1" => 0b1001,
-            "r2" => 0b0010,
-            "@r2" => 0b1010,
-            "r3" => 0b0011,
-            "@r3" => 0b1011,
-            "r4" => 0b0100,
-            "@r4" => 0b1100,
-            "r5" => 0b0101,
-            "@r5" => 0b1101,
-            "r6" => 0b0110,
-            "@r6" => 0b1110,
-            "r7" => 0b0111,
-            "@r7" => 0b1111,
+    fn parse_location(location: &str) -> Option<Location> {
+        use Register::*;
+        Some(match location {
+            "sp" => Location { register: SP, indirect: false },
+            "@sp" => Location { register: SP, indirect: true },
+            "r1" => Location { register: R1, indirect: false },
+            "@r1" => Location { register: R1, indirect: true },
+            "r2" => Location { register: R2, indirect: false },
+            "@r2" => Location { register: R2, indirect: true },
+            "r3" => Location { register: R3, indirect: false },
+            "@r3" => Location { register: R3, indirect: true },
+            "r4" => Location { register: R4, indirect: false },
+            "@r4" => Location { register: R4, indirect: true },
+            "r5" => Location { register: R5, indirect: false },
+            "@r5" => Location { register: R5, indirect: true },
+            "r6" => Location { register: R6, indirect: false },
+            "@r6" => Location { register: R6, indirect: true },
+            "r7" => Location { register: R7, indirect: false },
+            "@r7" => Location { register: R7, indirect: true },
             _ => return None
         })
     }
 
-    fn parse_condition(condition: Option<&str>) -> Option<u8> {
-        Some(match try_do!(condition) {
-            ">" => 0b0010,
-            "==" => 0b0100,
-            ">=" => 0b0110,
-            "<" => 0b1000,
-            "!=" => 0b1010,
-            "<=" => 0b1100,
+    fn parse_condition(condition: &str) -> Option<Condition> {
+        use Condition::*;
+        Some(match condition {
+            ">" => GT,
+            "==" => EQ,
+            ">=" => GE,
+            "<" => LT,
+            "!=" => NE,
+            "<=" => LE,
             _ => return None
         })
     }

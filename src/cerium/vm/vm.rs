@@ -1,17 +1,16 @@
 // #![allow(arithmetic_overflow)]
 
-use super::register::CeriumRegister;
-use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, CeriumPtr, CeriumRAM};
+use super::register::Register;
+use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, Pointer, RAM};
 use crate::cerium::memory_buffer::{EndianConversion, MemoryBuffer, MemoryBufferPtr};
-use std::fmt::LowerHex;
 use std::hint::unreachable_unchecked;
 use std::ops::*;
 use text_io::read;
 
 #[derive(Default)]
 pub struct CeriumVM {
-    memory: CeriumRAM,
-    registers: [CeriumRegister; 8],
+    memory: RAM,
+    registers: [Register; 8],
     instruction_ptr: CeWord,
     program: MemoryBuffer,
     done: bool,
@@ -33,7 +32,7 @@ impl CeriumVM {
     #[inline(always)]
     fn get_memory<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
         let register_value = self.get_register::<CeInt32>(bits).get() as CeWord;
-        self.memory.at(CeriumPtr::new(register_value)).unwrap()
+        self.memory.at(Pointer::new(register_value)).unwrap()
     }
 
     #[inline(always)]
