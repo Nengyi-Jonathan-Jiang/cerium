@@ -1,4 +1,4 @@
-pub use crate::cerium::assembler::CasmAssembler;
+pub use crate::cerium::assembler::CeriumAssembler;
 pub use crate::cerium::vm::CeriumVM;
 use std::env::args;
 use std::fs::File;
@@ -34,7 +34,7 @@ fn assemble(input_path: &str, output_path: &str) {
     let mut input_file_str: String = String::default();
     input_file.read_to_string(&mut input_file_str).expect("Unable to read input file");
 
-    let result_bytes = CasmAssembler::assemble(input_file_str.as_str());
+    let result_bytes = CeriumAssembler::assemble_casm(input_file_str.as_str());
 
     let mut output_file = File::create(Path::new(output_path)).expect(
         &format!("File not found: {}", output_path)
@@ -50,7 +50,7 @@ fn assemble_and_execute(input_path: &str) {
     let mut input_file_str: String = String::default();
     input_file.read_to_string(&mut input_file_str).expect("Unable to read input file");
 
-    let result_bytes = CasmAssembler::assemble(input_file_str.as_str());
+    let result_bytes = CeriumAssembler::assemble_casm(input_file_str.as_str());
     
     let mut vm = CeriumVM::new();
     vm.load_program(result_bytes);

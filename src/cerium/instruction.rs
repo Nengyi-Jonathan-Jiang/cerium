@@ -1,4 +1,4 @@
-pub mod instruction_parts {
+pub mod casm_instruction_parts {
     #[derive(Copy, Clone)]
     pub enum Condition {
         LT = 0b1000,
@@ -72,10 +72,12 @@ pub mod instruction_parts {
     }
 }
 
-use instruction_parts::*;
+use casm_instruction_parts::*;
 
-#[derive(Copy, Clone)]
-pub enum Instruction {
+#[derive(Clone)]
+pub enum CASMInstruction {
+    Data(Box<[u8]>),
+    Label(String),
     Mov {
         src_ty: Type,
         dst_ty: Type,
@@ -85,6 +87,7 @@ pub enum Instruction {
     Lod8(Location, u8),
     Lod16(Location, u16),
     Lod32(Location, u32),
+    LodLabel(Location, String),
     Halt,
     Memcpy {
         src: Location,
@@ -125,74 +128,4 @@ pub enum Instruction {
     },
     Input(Location),
     Output(Location),
-}
-
-impl Instruction {
-    pub fn output_to<F: FnMut(u8)>(&self, mut f: F) {
-        use Instruction::*;
-
-        match *self {
-            Mov { src_ty, dst_ty, src, dst } => {
-                f(((src_ty as u8) << 2) | (dst_ty as u8));
-                f((src.as_u8() << 4) | dst.as_u8());
-            }
-            Lod8(loc, val) => {
-                f(0b00010000 | loc.as_u8());
-                f(val);
-            }
-            Lod16(loc, val) => {
-                f(0b00100000 | loc.as_u8());
-                f((val >> 8) as u8);
-                f(val as u8);
-            }
-            Lod32(loc, val) => {
-                f(0b00110000 | loc.as_u8());
-                f((val >> 24) as u8);
-                f((val >> 16) as u8);
-                f((val >> 8) as u8);
-                f(val as u8);
-            }
-            Halt => {
-                f(0b01000000);
-            }
-            Memcpy { src, dst, size } => {
-                f(0b01010000 | size.as_u8());
-                f((src.as_u8() << 4) | dst.as_u8());
-            }
-            New { size, dst } => {
-                f(0b01100000);
-                f((size.as_u8() << 4) | dst.as_u8());
-            }
-            Del { src } => {
-                f(0b01110000 | src.as_u8());
-            }
-            BinOp {
-                op,
-                ty,
-                src1,
-                src2,
-                dst
-            } => {
-                f(0b11000000u8 | ((ty as u8) << 4) | (op as u8));
-                f((src1.as_u8() << 4) | src2.as_u8());
-                f(dst.as_u8() << 4);
-            }
-            UnOp { op, ty, src, dst } => {
-                f(((op as u8) << 4) | ((ty as u8) << 2));
-                f((src.as_u8() << 4) | dst.as_u8());
-            }
-            Cmp { ty, src, dst, cnd } => {
-                f(0b11_00_1110_u8 | ((ty as u8) << 4));
-                f((src.as_u8() << 4) | (cnd as u8));
-                f(dst.as_u8() << 4);
-            }
-            Jmp { ty, src, tgt, cnd } => {
-                f(0b11_00_1111_u8 | ((ty as u8) << 4));
-                f((src.as_u8() << 4) | (cnd as u8));
-                f(tgt.as_u8() << 4);
-            }
-            Input(dst) => f(0b10100000 | dst.as_u8()),
-            Output(src) => f(0b10110000 | src.as_u8()),
-        }
-    }
 }

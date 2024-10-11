@@ -1,5 +1,6 @@
 use crate::cerium::vm::CeWord;
 
+#[repr(transparent)]
 pub struct MemoryBufferPtr<T: EndianConversion> {
     ptr: *mut T,
 }
