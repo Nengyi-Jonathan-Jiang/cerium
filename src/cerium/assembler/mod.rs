@@ -285,7 +285,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             Memcpy { src, dst, size }
         }
         "new" => {
-            // new @r1 <- r2
+            // new l1 ; l2
             let dst = parse_location(items.next()?)?;
             items.next()?;
             let size = parse_location(items.next()?)?;
@@ -293,6 +293,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             New { size, dst }
         }
         "del" => {
+            // del l1
             let src = parse_location(items.next()?)?;
             Del { src }
         }
