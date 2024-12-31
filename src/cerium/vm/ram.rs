@@ -71,6 +71,15 @@ impl RAM {
         let heap_ptr = Self::ptr_to_mem_ptr(ptr);
         self.allocator.deallocate(heap_ptr)
     }
+    
+    pub fn get_allocation_size(&self, ptr: Pointer) -> Result<Size, String> {
+        if !Self::is_heap_ptr(ptr) {
+            return Err("CeriumVM Error: Querying size of non-heap pointer".to_owned());
+        }
+        let heap_ptr = Self::ptr_to_mem_ptr(ptr);
+        
+        self.allocator.get_allocation_size(heap_ptr)
+    }
 
     pub fn memcpy(&mut self, src: Pointer, dst: Pointer, length: Size) -> Result<(), String> {
         if let Err(err) = self.resize_mem_to_fit(src + length) {

@@ -2,7 +2,7 @@
 
 use super::register::Register;
 use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, Pointer, RAM};
-use crate::cerium::memory_buffer::{EndianConversion, MemoryBuffer, MemoryBufferPtr};
+use crate::cerium::memory_buffer::{EndianConversion, MemoryBufferPtr};
 use std::hint::unreachable_unchecked;
 use std::mem::size_of;
 use std::ops::*;
@@ -10,10 +10,10 @@ use text_io::read;
 
 #[derive(Default)]
 pub struct CeriumVM {
-    memory: RAM,
-    registers: [Register; 8],
-    instruction_ptr: CeWord,
-    done: bool,
+    pub memory: RAM,
+    pub registers: [Register; 8],
+    pub instruction_ptr: CeWord,
+    pub done: bool,
 }
 
 impl CeriumVM {
@@ -21,10 +21,7 @@ impl CeriumVM {
         Default::default()
     }
 
-    pub fn load_program(
-        &mut self,
-        program: impl IntoIterator<Item = u8>,
-    ) -> Result<(), String> {
+    pub fn load_program(&mut self, program: impl IntoIterator<Item = u8>) -> Result<(), String> {
         let program_bytes = program.into_iter().collect::<Vec<_>>();
         let program_len = program_bytes.len() as CeInt32;
 
@@ -51,13 +48,13 @@ impl CeriumVM {
     }
 
     #[inline(always)]
-    fn get_memory<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
+    pub fn get_memory<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
         let register_value = self.get_register::<CeInt32>(bits).get() as CeWord;
         self.memory.at(Pointer::new(register_value)).unwrap()
     }
 
     #[inline(always)]
-    fn get_location<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
+    pub fn get_location<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
         if (bits & 0b1000) != 0 {
             self.get_memory(bits)
         } else {
@@ -66,13 +63,17 @@ impl CeriumVM {
     }
 
     #[inline(always)]
-    fn get_word_for_location(&mut self, bits: u8) -> CeWord {
+    pub fn get_word_for_location(&mut self, bits: u8) -> CeWord {
         self.get_location::<CeInt32>(bits).get() as CeWord
     }
 
     #[inline(always)]
     fn get_next_and_inc_ip<T: EndianConversion>(&mut self) -> T {
-        let res: T = self.memory.at(Pointer::from(self.instruction_ptr)).unwrap().get();
+        let res: T = self
+            .memory
+            .at(Pointer::from(self.instruction_ptr))
+            .unwrap()
+            .get();
         // let res = self.program.get::<T>(self.instruction_ptr as usize).get();
         self.instruction_ptr += size_of::<T>() as CeWord;
         res
@@ -200,7 +201,7 @@ impl CeriumVM {
                 }
                 0b0100 => {
                     self.done = true;
-                } // NOOP
+                } // HALT
                 0b0101 => {
                     // MEMCPY
                     let b2 = self.get_next_and_inc_ip::<u8>();

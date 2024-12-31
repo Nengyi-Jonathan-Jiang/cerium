@@ -39,26 +39,35 @@ pub struct Allocator {
 
 impl Allocator {
     fn mark_block_free(&mut self, ptr: Pointer) -> MemoryBlockInfo {
-        let curr_block = self.blocks.get_mut(&ptr).expect("Internal CeriumVM error: Invalid pointer");
+        let curr_block = self
+            .blocks
+            .get_mut(&ptr)
+            .expect("Internal CeriumVM error: Invalid pointer");
         curr_block.status = MemoryBlockStatus::FREE;
 
         let curr_block: MemoryBlockInfo = *curr_block;
-        self.free_blocks_for_size.insert(curr_block.span.size(), ptr);
+        self.free_blocks_for_size
+            .insert(curr_block.span.size(), ptr);
         curr_block
     }
 
     fn mark_block_used(&mut self, ptr: Pointer) -> MemoryBlockInfo {
-        let curr_block = self.blocks.get_mut(&ptr).expect("Internal CeriumVM error: Invalid pointer");
+        let curr_block = self
+            .blocks
+            .get_mut(&ptr)
+            .expect("Internal CeriumVM error: Invalid pointer");
         curr_block.status = MemoryBlockStatus::USED;
 
         let curr_block: MemoryBlockInfo = *curr_block;
-        self.free_blocks_for_size.remove(curr_block.span.size(), ptr);
+        self.free_blocks_for_size
+            .remove(curr_block.span.size(), ptr);
         curr_block
     }
 
     fn add_block(&mut self, block: MemoryBlockInfo) {
         if block.status == MemoryBlockStatus::FREE {
-            self.free_blocks_for_size.insert(block.span.size(), block.span.start);
+            self.free_blocks_for_size
+                .insert(block.span.size(), block.span.start);
         }
 
         self.blocks.insert(block.span.start, block);
@@ -66,7 +75,8 @@ impl Allocator {
 
     fn remove_block(&mut self, block: MemoryBlockInfo) {
         if block.status == MemoryBlockStatus::FREE {
-            self.free_blocks_for_size.remove(block.span.size(), block.span.start);
+            self.free_blocks_for_size
+                .remove(block.span.size(), block.span.start);
         }
         self.blocks.remove(&block.span.start);
     }
@@ -78,10 +88,7 @@ impl Allocator {
             let prev_block: MemoryBlockInfo = self.blocks.get(&prev_block_ptr).cloned().unwrap();
             // We should merge with it if it is free
             if prev_block.status == MemoryBlockStatus::FREE {
-                curr_block = self.merge_free_blocks(
-                    prev_block,
-                    curr_block,
-                );
+                curr_block = self.merge_free_blocks(prev_block, curr_block);
             }
         }
 
@@ -89,10 +96,7 @@ impl Allocator {
         if let Some(next_block) = self.blocks.get(&curr_block.span.end).cloned() {
             // We should merge with it if it is free
             if next_block.status == MemoryBlockStatus::FREE {
-                self.merge_free_blocks(
-                    curr_block,
-                    next_block,
-                );
+                self.merge_free_blocks(curr_block, next_block);
             }
         }
         // Otherwise, we can remove this block  entirely because it is a trailing free block
@@ -173,7 +177,11 @@ impl Allocator {
 
     pub fn allocate(&mut self, alloc_size: Size) -> Pointer {
         // Try to find a free block of the right size
-        if let Some(mut block) = self.free_blocks_for_size.get_first_ptr_with_min_size(alloc_size).and_then(|x| self.blocks.get(&x).cloned()) {
+        if let Some(mut block) = self
+            .free_blocks_for_size
+            .get_first_ptr_with_min_size(alloc_size)
+            .and_then(|x| self.blocks.get(&x).cloned())
+        {
             // Split the block
             if block.span.size() > alloc_size {
                 block = self.split_free_block(block, alloc_size).0;
@@ -208,6 +216,16 @@ impl Allocator {
 
         Err("CeriumVM Error: invalid pointer to deallocate".to_owned())
     }
+
+    pub fn get_allocation_size(&self, ptr: Pointer) -> Result<Size, String> {
+        if let Some(block) = self.blocks.get(&ptr).cloned() {
+            if block.status == MemoryBlockStatus::USED {
+                return Ok(block.span.size());
+            }
+        }
+
+        Err("CeriumVM Error: invalid pointer to query size".to_owned())
+    }
 }
 
 impl Debug for Allocator {
@@ -219,7 +237,6 @@ impl Debug for Allocator {
                 }
             };
         }
-
 
         write_or_return!(f, "Memory layout: ");
 
@@ -266,8 +283,7 @@ pub struct FreeBlocksMap {
     backing_map: BTreeMap<Size, BTreeSet<Pointer>>,
 }
 
-impl FreeBlocksMap
-{
+impl FreeBlocksMap {
     pub fn get_ptrs_with_size(&mut self, size: Size) -> &mut BTreeSet<Pointer> {
         self.backing_map.entry(size).or_insert_with(BTreeSet::new)
     }
@@ -287,7 +303,9 @@ impl FreeBlocksMap
     }
 
     pub fn get_first_ptr_with_min_size(&self, minimum_size: Size) -> Option<Pointer> {
-        self.backing_map.range(minimum_size..).next()
+        self.backing_map
+            .range(minimum_size..)
+            .next()
             .and_then(|(key, _)| self.backing_map.get(key))
             .and_then(|set| set.first().cloned())
     }
