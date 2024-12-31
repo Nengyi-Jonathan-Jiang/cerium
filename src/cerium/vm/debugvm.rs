@@ -1,17 +1,28 @@
 // #![allow(arithmetic_overflow)]
 
-use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, Pointer};
-use crate::cerium::memory_buffer::{EndianConversion, MemoryBufferPtr};
-use crate::CeriumVM;
-use std::any::TypeId;
+use super::{CeInt8, CeInt16, CeInt32, CeFloat, CeWord, Pointer};
+use crate::cerium::instruction::casm_instruction_parts::{Location, Register, Type};
+use crate::cerium::instruction::{CASMInstruction, CASMInstructionSourceStream};
+use crate::cerium::memory_buffer::{CeriumPrimitiveType, EndianConversion};
+use crate::{match_cerium_type, CeriumVM};
+use std::collections::HashMap;
 use std::hint::unreachable_unchecked;
 use std::mem::size_of;
+use super::super::instruction::casm_instruction_parts;
 
 #[derive(Default)]
 pub struct DebugCeriumVM {
     vm: CeriumVM,
     program_length: usize,
     instruction_ptr: CeWord,
+    registers_types: [Type; 8],
+    memory_types: HashMap<CeWord, Type>,
+}
+
+impl CASMInstructionSourceStream for DebugCeriumVM {
+    fn get_next<T: EndianConversion>(&mut self) -> T {
+        self.get_next_and_inc_ip()
+    }
 }
 
 impl DebugCeriumVM {
@@ -43,205 +54,77 @@ impl DebugCeriumVM {
     }
 
     #[inline(always)]
-    fn get_memory<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
-        self.vm.get_memory(bits)
-    }
-
-    #[inline(always)]
-    fn get_location<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
-        self.vm.get_location(bits)
-    }
-
-    #[inline(always)]
     fn get_word_for_location(&mut self, bits: u8) -> CeWord {
-        self.get_location::<CeInt32>(bits).get() as CeWord
+        self.vm.get_location::<CeInt32>(bits).get() as CeWord
     }
 
     pub fn execute_next_instruction(&mut self) {
         self.re_sync_ip_with_vm();
-        let curr_instruction_byte = self.get_next_and_inc_ip::<u8>();
 
-        if (curr_instruction_byte >> 6) == 3 {
-            // Ternary instructions
-            let instruction_part = curr_instruction_byte & 0b00001111;
-            let type_part = (curr_instruction_byte & 0b00110000) >> 4;
+        let next_instruction = CASMInstruction::parse_from_stream(self);
 
-            let _ = self.get_next_and_inc_ip::<u8>();
-            let b3 = self.get_next_and_inc_ip::<u8>();
+        println!("{:?}", next_instruction);
 
-            macro_rules! do_instruction {
-                ($type_part: expr, $b2: expr, $b3: expr; $reason: expr) => {
-                    match $type_part {
-                        0b00 => self.execute_next_instruction_debug::<CeInt8>($b3 >> 4),
-                        0b01 => self.execute_next_instruction_debug::<CeInt16>($b3 >> 4),
-                        0b10 => self.execute_next_instruction_debug::<CeInt32>($b3 >> 4),
-                        0b11 => self.vm.execute_next_instruction(),
-                        _ => unsafe { unreachable_unchecked() },
-                    }
-                };
-
-                ($type_part: expr, $b2: expr, $b3: expr) => {
-                    match $type_part {
-                        0b00 => self.execute_next_instruction_debug::<CeInt8>($b3 >> 4),
-                        0b01 => self.execute_next_instruction_debug::<CeInt16>($b3 >> 4),
-                        0b10 => self.execute_next_instruction_debug::<CeInt32>($b3 >> 4),
-                        0b11 => self.execute_next_instruction_debug::<CeFloat>($b3 >> 4),
-                        _ => unsafe { unreachable_unchecked() },
-                    }
-                };
-                (call $method: ident, $type_part: expr, $b2: expr, $b3: expr) => {
-                    match $type_part {
-                        0b00 => self.$method::<CeInt8>($b2, $b3),
-                        0b01 => self.$method::<CeInt16>($b2, $b3),
-                        0b10 => self.$method::<CeInt32>($b2, $b3),
-                        0b11 => self.$method::<CeFloat>($b2, $b3),
-                        _ => unsafe {
-                            unreachable_unchecked();
-                        },
-                    }
-                };
+        match CASMInstruction::parse_from_stream(self) {
+            CASMInstruction::Mov { dst_ty, dst, .. } => {
+                self.execute_next_instruction_debug(dst_ty, dst)
             }
+            CASMInstruction::Lod8(loc, _) => self.execute_next_instruction_debug(Type::Int8, loc),
+            CASMInstruction::Lod16(loc, _) => self.execute_next_instruction_debug(Type::Int16, loc),
+            CASMInstruction::Lod32(loc, _) => self.execute_next_instruction_debug(Type::Int32, loc),
+            CASMInstruction::Halt => self.vm.execute_next_instruction(),
+            CASMInstruction::Memcpy { src, dst, size } => {
+                let size = self.get_word_for_location(size.to_bits());
+                let src = self.get_word_for_location(src.to_bits());
+                let dest = self.get_word_for_location(dst.to_bits());
 
-            match instruction_part {
-                0b0000 => self.vm.execute_next_instruction(), // NO-OP
-                0b0001 => do_instruction!(type_part, b2, b3),
-                0b0010 => do_instruction!(type_part, b2, b3),
-                0b0011 => do_instruction!(type_part, b2, b3),
-                0b0100 | 0b0101 => self.vm.execute_next_instruction(), // NO-OP
-                0b0110 => do_instruction!(type_part, b2, b3),
-                0b0111 => do_instruction!(type_part, b2, b3),
-                0b1000 => self.vm.execute_next_instruction(), // NO-OP
-                0b1001 => do_instruction!(type_part, b2, b3),
-                0b1010 => do_instruction!(type_part, b2, b3),
-                0b1011 => do_instruction!(type_part, b2, b3),
-                0b1100 => do_instruction!(type_part, b2, b3),
-                0b1101 => do_instruction!(type_part, b2, b3),
-                0b1110 => {
-                    // CMP. This is hacky because technically CMP has a different layout of bits
-                    // than arithmetic instructions, but it's fine because the target location bits
-                    // are in the same position
-                    do_instruction!(type_part, b2, b3)
-                }
-                0b1111 => self.execute_next_instruction_and_debug_jmp(),
-                _ => unsafe { unreachable_unchecked() },
+                self.vm.execute_next_instruction();
+
+                println!(
+                    "<Debug> MEMCPY'ed {} bytes from ptr {} to ptr {}",
+                    size, src, dest
+                );
             }
-        } else {
-            let instruction_part = curr_instruction_byte >> 4;
-            match instruction_part {
-                0b0000 => {
-                    // MOV
-                    let b2 = self.get_next_and_inc_ip::<u8>();
-                    let dst_t = curr_instruction_byte & 0b11;
+            CASMInstruction::New { size, dst } => {
+                let size = self.get_word_for_location(size.to_bits());
 
-                    unsafe {
-                        match dst_t {
-                            0b00 => self.execute_next_instruction_debug::<CeInt8>(b2 >> 4),
-                            0b01 => self.execute_next_instruction_debug::<CeInt16>(b2 >> 4),
-                            0b10 => self.execute_next_instruction_debug::<CeInt32>(b2 >> 4),
-                            0b11 => self.execute_next_instruction_debug::<CeFloat>(b2 >> 4),
-                            _ => unreachable_unchecked(),
-                        }
-                    }
-                }
-                0b0001 => {
-                    // LOD8
-                    self.get_next_and_inc_ip::<CeInt8>();
-                    self.execute_next_instruction_debug::<CeInt8>(curr_instruction_byte);
-                }
-                0b0010 => {
-                    // LOD16
-                    self.get_next_and_inc_ip::<CeInt16>();
-                    self.execute_next_instruction_debug::<CeInt16>(curr_instruction_byte);
-                }
-                0b0011 => {
-                    // LOD32
-                    self.get_next_and_inc_ip::<CeInt32>();
-                    self.execute_next_instruction_debug::<CeInt32>(curr_instruction_byte);
-                }
-                0b0100 => self.vm.execute_next_instruction(), // HALT
-                0b0101 => {
-                    // MEMCPY
-                    let b2 = self.get_next_and_inc_ip::<u8>();
-                    let size = self.get_location::<CeInt32>(curr_instruction_byte).get() as CeWord;
-                    let src = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
-                    let dest = self.get_location::<CeInt32>(b2).get() as CeWord;
-
-                    println!(
-                        "<Debug> MEMCPY'ed {} bytes from ptr {} to ptr {}",
-                        size, src, dest
-                    );
-
-                    self.vm.execute_next_instruction();
-                }
-                0b0110 => {
-                    // NEW
-                    let b2 = self.get_next_and_inc_ip::<u8>();
-                    let size = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
-                    println!("<Debug> Allocating {} bytes of memory", size);
-                    self.execute_next_instruction_debug::<CeInt32>(b2);
-                }
-                0b0111 => {
-                    // DEL
-                    let b2 = self.get_next_and_inc_ip::<u8>();
-                    let src = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
-
-                    // Debug for deallocate ptr src
-                    match self.vm.memory.get_allocation_size(Pointer::from(src)) {
-                        Ok(size) => {
-                            println!(
-                                "<Debug> Deallocated ptr {} (size {})",
-                                src,
-                                Into::<CeWord>::into(size)
-                            );
-                        }
-                        Err(..) => {
-                            println!(
-                                "<Debug> Trying to deallocate ptr {} will probably result in error",
-                                src
-                            );
-                        }
-                    }
-                }
-                0b1000 => {
-                    // NEG
-                    let type_part = (curr_instruction_byte >> 2) & 0b11;
-                    let b2 = self.get_next_and_inc_ip::<u8>();
-
-                    match type_part {
-                        0b00 => self.execute_next_instruction_debug::<CeInt8>(b2),
-                        0b01 => self.execute_next_instruction_debug::<CeInt16>(b2),
-                        0b10 => self.execute_next_instruction_debug::<CeInt32>(b2),
-                        0b11 => self.execute_next_instruction_debug::<CeFloat>(b2),
-                        _ => unsafe { unreachable_unchecked() },
-                    }
-                }
-                0b1001 => {
-                    // Bitwise negation
-                    let type_part = (curr_instruction_byte >> 2) & 0b11;
-                    let b2 = self.get_next_and_inc_ip::<u8>();
-
-                    match type_part {
-                        0b00 => self.execute_next_instruction_debug::<CeInt8>(b2),
-                        0b01 => self.execute_next_instruction_debug::<CeInt16>(b2),
-                        0b10 => self.execute_next_instruction_debug::<CeInt32>(b2),
-                        0b11 => self.vm.execute_next_instruction(),
-                        _ => unsafe { unreachable_unchecked() },
-                    }
-                }
-                0b1010 => {
-                    // Input
-                    self.execute_next_instruction_debug::<CeInt32>(curr_instruction_byte);
-                }
-                0b1011 => {
-                    // Output
-                    self.vm.execute_next_instruction();
-                }
-                _ => unsafe { unreachable_unchecked() },
+                println!("<Debug> Allocated {} bytes of memory", size);
+                self.execute_next_instruction_debug(Type::Int32, dst);
             }
+            CASMInstruction::Del { src } => {
+                let src = self.get_word_for_location(src.to_bits()).into();
+
+                let size = self.vm.memory.get_allocation_size(src);
+                self.vm.execute_next_instruction();
+
+                println!(
+                    "<Debug> Deallocated {} bytes of memory at {}",
+                    CeWord::from(size.unwrap()),
+                    CeWord::from(src)
+                );
+            }
+            CASMInstruction::Jmp { .. } => self.execute_next_instruction_debug_jmp(),
+            CASMInstruction::Cmp { ty, dst, .. }
+            | CASMInstruction::BinOp { ty, dst, .. }
+            | CASMInstruction::UnOp { ty, dst, .. } => {
+                self.execute_next_instruction_debug(ty, dst);
+            }
+            CASMInstruction::Input(dst) => {
+                self.execute_next_instruction_debug(Type::Int32, dst);
+            }
+            CASMInstruction::Output(_) => {
+                self.vm.execute_next_instruction();
+            }
+            CASMInstruction::NoOp => self.vm.execute_next_instruction(),
+
+            // parse_next_instruction will never emit these instructions
+            CASMInstruction::Data(_) => unsafe { unreachable_unchecked() },
+            CASMInstruction::Label(_) => unsafe { unreachable_unchecked() },
+            CASMInstruction::LodLabel(..) => unsafe { unreachable_unchecked() },
         }
     }
 
-    fn execute_next_instruction_and_debug_jmp(&mut self) {
+    fn execute_next_instruction_debug_jmp(&mut self) {
         self.vm.execute_next_instruction();
 
         // instruction ptr should point to the next instruction; if the vm's instruction ptr is
@@ -252,54 +135,44 @@ impl DebugCeriumVM {
         }
     }
 
-    fn execute_next_instruction_debug<T: EndianConversion + 'static>(
-        &mut self,
-        target_location_bits: u8,
-    ) {
-        let target_location_type = get_location_info(target_location_bits);
-        let target_data_type = TypeId::of::<T>();
-
+    fn execute_next_instruction_debug(&mut self, dst_ty: Type, dst_loc: Location) {
         self.vm.execute_next_instruction();
+        if dst_loc.indirect {
+            let mem_loc = self.get_word_for_location(
+                Location {
+                    register: dst_loc.register,
+                    indirect: false,
+                }
+                .to_bits(),
+            );
+            self.memory_types.insert(mem_loc, dst_ty);
+        } else {
+            self.registers_types[dst_loc.register.to_bits() as usize] = dst_ty;
+        }
 
-        // TODO
-        let register_name: String = match target_location_type {
-            Location::Memory(n) | Location::Register(n) => match n {
-                0 => "sp".to_owned(),
-                x => format!("r{}", x),
-            },
-        };
+        print!("<Debug> ");
+        if dst_loc.indirect {
+            println!("did something to memory at value of {:?}", dst_loc.register);
+        } else {
+            print!("Registers are now:    ");
+            for r in 0..8 {
+                fn _f<T: CeriumPrimitiveType>(vm: &mut CeriumVM, register: Register) {
+                    print!(
+                        "{:?}={:<10} ",
+                        register,
+                        vm.registers[register.to_bits() as usize]
+                            .get::<T>()
+                            .get()
+                    );
+                }
 
-        println!(
-            "<Debug> did something to {}",
-            match target_location_type {
-                Location::Memory(..) => format!("memory at value of {}", register_name),
-                Location::Register(..) => format!("{}", register_name),
+                match_cerium_type!(match self.registers_types[r as usize] => _f(&mut self.vm, Register::from_bits(r).unwrap()));
             }
-        );
+            println!();
+        }
     }
 
-    fn cmp_instr<T: EndianConversion + PartialOrd + From<i8> + 'static>(&mut self, _: u8, b3: u8) {
-        self.execute_next_instruction_debug::<T>(b3 >> 4);
-    }
-
-    fn lod_instr<T: EndianConversion + 'static>(&mut self, loc: u8, _: T) {
-        self.execute_next_instruction_debug::<T>(loc);
-    }
-
-    pub(crate) fn is_done(&self) -> bool {
+    pub fn is_done(&self) -> bool {
         self.vm.is_done()
-    }
-}
-
-enum Location {
-    Memory(u8),
-    Register(u8),
-}
-
-fn get_location_info(bits: u8) -> Location {
-    if (bits & 0b1000) != 0 {
-        Location::Memory(bits & 0b0111)
-    } else {
-        Location::Register(bits & 0b0111)
     }
 }

@@ -1,8 +1,12 @@
+use crate::cerium::instruction::casm_instruction_parts::{
+    BinOp, Condition, Location, Register, Type, UnOp,
+};
+use crate::cerium::instruction::CASMInstruction;
+use crate::cerium::vm::{CeInt16, CeInt32, CeInt8};
 use crate::try_do;
 use std::collections::HashMap;
 use std::mem;
-use crate::cerium::instruction::CASMInstruction;
-use crate::cerium::instruction::casm_instruction_parts::{BinOp, UnOp, Condition, Location, Register, Type};
+use crate::cerium::memory_buffer::EndianConversion;
 
 pub struct CeriumAssembler {
     output_buffer: Vec<u8>,
@@ -15,13 +19,13 @@ impl CeriumAssembler {
         let mut assembler = CeriumAssembler {
             output_buffer: Default::default(),
             label_placeholder_locations: Default::default(),
-            label_locations: Default::default()
+            label_locations: Default::default(),
         };
-        
+
         for instruction in instructions.into_iter().cloned() {
             assembler.write_instruction(instruction)
         }
-        
+
         assembler.populate_label_placeholders();
         assembler.output_buffer.into_boxed_slice()
     }
@@ -56,34 +60,42 @@ impl CeriumAssembler {
         use CASMInstruction::*;
 
         match instruction {
+            NoOp => self.write_byte_to_output(0b11_00_0000),
             Data(data) => {
-                data.iter().cloned().for_each(|x| self.write_byte_to_output(x));
+                data.iter()
+                    .cloned()
+                    .for_each(|x| self.write_byte_to_output(x));
             }
             Label(label_name) => {
                 self.save_label_location(label_name);
             }
-            Mov { src_ty, dst_ty, src, dst } => {
+            Mov {
+                src_ty,
+                dst_ty,
+                src,
+                dst,
+            } => {
                 self.write_byte_to_output(((src_ty as u8) << 2) | (dst_ty as u8));
-                self.write_byte_to_output((src.as_u8() << 4) | dst.as_u8());
+                self.write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
             }
             Lod8(loc, val) => {
-                self.write_byte_to_output(0b00010000 | loc.as_u8());
-                self.write_byte_to_output(val);
+                self.write_byte_to_output(0b00_01_0000 | loc.to_bits());
+                self.write_byte_to_output(val as u8);
             }
             Lod16(loc, val) => {
-                self.write_byte_to_output(0b00100000 | loc.as_u8());
+                self.write_byte_to_output(0b00_10_0000 | loc.to_bits());
                 self.write_byte_to_output((val >> 8) as u8);
                 self.write_byte_to_output(val as u8);
             }
             Lod32(loc, val) => {
-                self.write_byte_to_output(0b00110000 | loc.as_u8());
+                self.write_byte_to_output(0b00_11_0000 | loc.to_bits());
                 self.write_byte_to_output((val >> 24) as u8);
                 self.write_byte_to_output((val >> 16) as u8);
                 self.write_byte_to_output((val >> 8) as u8);
                 self.write_byte_to_output(val as u8);
             }
             LodLabel(loc, label_name) => {
-                self.write_byte_to_output(0b00110000 | loc.as_u8());
+                self.write_byte_to_output(0b00_11_0000 | loc.to_bits());
 
                 self.add_label_placeholder(label_name);
             }
@@ -91,43 +103,43 @@ impl CeriumAssembler {
                 self.write_byte_to_output(0b01000000);
             }
             Memcpy { src, dst, size } => {
-                self.write_byte_to_output(0b01010000 | size.as_u8());
-                self.write_byte_to_output((src.as_u8() << 4) | dst.as_u8());
+                self.write_byte_to_output(0b01010000 | size.to_bits());
+                self.write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
             }
             New { size, dst } => {
                 self.write_byte_to_output(0b01100000);
-                self.write_byte_to_output((size.as_u8() << 4) | dst.as_u8());
+                self.write_byte_to_output((size.to_bits() << 4) | dst.to_bits());
             }
             Del { src } => {
-                self.write_byte_to_output(0b01110000 | src.as_u8());
+                self.write_byte_to_output(0b01110000 | src.to_bits());
             }
             BinOp {
                 op,
                 ty,
                 src1,
                 src2,
-                dst
+                dst,
             } => {
                 self.write_byte_to_output(0b11000000u8 | ((ty as u8) << 4) | (op as u8));
-                self.write_byte_to_output((src1.as_u8() << 4) | src2.as_u8());
-                self.write_byte_to_output(dst.as_u8() << 4);
+                self.write_byte_to_output((src1.to_bits() << 4) | src2.to_bits());
+                self.write_byte_to_output(dst.to_bits() << 4);
             }
             UnOp { op, ty, src, dst } => {
                 self.write_byte_to_output(((op as u8) << 4) | ((ty as u8) << 2));
-                self.write_byte_to_output((src.as_u8() << 4) | dst.as_u8());
+                self.write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
             }
             Cmp { ty, src, dst, cnd } => {
                 self.write_byte_to_output(0b11_00_1110_u8 | ((ty as u8) << 4));
-                self.write_byte_to_output((src.as_u8() << 4) | (cnd as u8));
-                self.write_byte_to_output(dst.as_u8() << 4);
+                self.write_byte_to_output((src.to_bits() << 4) | (cnd as u8));
+                self.write_byte_to_output(dst.to_bits() << 4);
             }
             Jmp { ty, src, tgt, cnd } => {
                 self.write_byte_to_output(0b11_00_1111_u8 | ((ty as u8) << 4));
-                self.write_byte_to_output((src.as_u8() << 4) | (cnd as u8));
-                self.write_byte_to_output(tgt.as_u8() << 4);
+                self.write_byte_to_output((src.to_bits() << 4) | (cnd as u8));
+                self.write_byte_to_output(tgt.to_bits() << 4);
             }
-            Input(dst) => self.write_byte_to_output(0b10100000 | dst.as_u8()),
-            Output(src) => self.write_byte_to_output(0b10110000 | src.as_u8()),
+            Input(dst) => self.write_byte_to_output(0b10100000 | dst.to_bits()),
+            Output(src) => self.write_byte_to_output(0b10110000 | src.to_bits()),
         }
     }
 
@@ -136,14 +148,13 @@ impl CeriumAssembler {
     }
 
     fn save_label_location(&mut self, label_name: String) {
-        self.label_locations.insert(label_name, self.output_buffer.len());
+        self.label_locations
+            .insert(label_name, self.output_buffer.len());
     }
-    
+
     fn add_label_placeholder(&mut self, label_name: String) {
-        self.label_placeholder_locations.push((
-            self.output_buffer.len(),
-            label_name
-        ));
+        self.label_placeholder_locations
+            .push((self.output_buffer.len(), label_name));
         self.write_byte_to_output(0);
         self.write_byte_to_output(0);
         self.write_byte_to_output(0);
@@ -152,9 +163,10 @@ impl CeriumAssembler {
 
     fn populate_label_placeholders(&mut self) -> Option<()> {
         for (label_location, label_name) in &self.label_placeholder_locations {
-            let label_value = self.label_locations.get(label_name).expect(
-                format!("Could not find label {}", label_name.as_str()).as_str()
-            );
+            let label_value = self
+                .label_locations
+                .get(label_name)
+                .expect(format!("Could not find label {}", label_name.as_str()).as_str());
             self.output_buffer[*label_location + 3] = *label_value as u8;
             self.output_buffer[*label_location + 2] = (*label_value >> 8) as u8;
             self.output_buffer[*label_location + 1] = (*label_value >> 16) as u8;
@@ -174,9 +186,9 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
 
     Some(match command {
         // Labels
-        _ if command.chars().last().unwrap() == ':' && command.chars().rev().skip(1).all(
-            is_label_character
-        ) => {
+        _ if command.chars().last().unwrap() == ':'
+            && command.chars().rev().skip(1).all(is_label_character) =>
+        {
             let label_name = &command[..command.len() - 1];
             Label(label_name.to_string())
         }
@@ -199,19 +211,24 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             let (ty, src, cnd) = match items.next()? {
                 "always" => (
                     Type::Int8,
-                    Location { register: Register::SP, indirect: false },
-                    Condition::ALWAYS
+                    Location {
+                        register: Register::SP,
+                        indirect: false,
+                    },
+                    Condition::ALWAYS,
                 ),
                 "if" => (
                     parse_ty(items.next()?)?,
                     parse_location(items.next()?)?,
-                    parse_condition(items.next()?)?
+                    parse_condition(items.next()?)?,
                 ),
-                _ => return None
+                _ => return None,
             };
             Jmp { ty, src, tgt, cnd }
         }
         "cmp" => {
+            // cmp [dst] <- [ty] [src] [cnd]
+            
             let dst = parse_location(items.next()?)?;
 
             items.next()?;
@@ -229,7 +246,12 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             let src_ty = parse_ty(items.next()?)?;
             let src = parse_location(items.next()?)?;
 
-            Mov { src_ty, dst_ty, src, dst }
+            Mov {
+                src_ty,
+                dst_ty,
+                src,
+                dst,
+            }
         }
         "lod" => {
             let dest = parse_location(items.next()?)?;
@@ -241,7 +263,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
                         return None;
                     }
 
-                    Lod8(dest, value as u8)
+                    Lod8(dest, value as CeInt8)
                 }
                 "s" => {
                     let value = parse_integral_value(items.next()?)?;
@@ -249,18 +271,17 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
                         return None;
                     }
 
-                    Lod16(dest, value as u16)
+                    Lod16(dest, value as CeInt16)
                 }
                 "i" => {
                     let value = parse_integral_value(items.next()?)?;
 
-                    Lod32(dest, value)
+                    Lod32(dest, value as CeInt32)
                 }
                 "f" => {
                     let value: f32 = try_do!(result items.next()?.parse());
-                    let value = unsafe { mem::transmute::<f32, u32>(value) };
 
-                    Lod32(dest, value)
+                    Lod32(dest, unsafe { mem::transmute::<f32, CeInt32>(value) }.to_big_endian())
                 }
                 label => {
                     if !label.chars().all(is_label_character) {
@@ -271,9 +292,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
                 }
             }
         }
-        "halt" => {
-            Halt
-        }
+        "halt" => Halt,
         "memcpy" => {
             // memcpy dst <- src ; size
             let dst = parse_location(items.next()?)?;
@@ -309,7 +328,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             let location = parse_location(items.next()?)?;
             Output(location)
         }
-        _ => return None
+        _ => return None,
     })
 }
 
@@ -320,12 +339,7 @@ fn parse_unop<'a>(items: &mut impl Iterator<Item = &'a str>, op: UnOp) -> Option
     items.next()?;
     let src = parse_location(items.next()?)?;
 
-    Some(CASMInstruction::UnOp {
-        op,
-        ty,
-        src,
-        dst,
-    })
+    Some(CASMInstruction::UnOp { op, ty, src, dst })
 }
 
 fn parse_integral_value(x: &str) -> Option<u32> {
@@ -344,7 +358,10 @@ fn parse_integral_value(x: &str) -> Option<u32> {
     None
 }
 
-fn parse_binop<'a>(items: &mut impl Iterator<Item = &'a str>, op: BinOp) -> Option<CASMInstruction> {
+fn parse_binop<'a>(
+    items: &mut impl Iterator<Item = &'a str>,
+    op: BinOp,
+) -> Option<CASMInstruction> {
     let ty = parse_ty(items.next()?)?;
     let dst = parse_location(items.next()?)?;
     items.next()?;
@@ -352,7 +369,13 @@ fn parse_binop<'a>(items: &mut impl Iterator<Item = &'a str>, op: BinOp) -> Opti
     items.next()?;
     let src2 = parse_location(items.next()?)?;
 
-    Some(CASMInstruction::BinOp { op, ty, src1, src2, dst })
+    Some(CASMInstruction::BinOp {
+        op,
+        ty,
+        src1,
+        src2,
+        dst,
+    })
 }
 
 fn parse_ty(x: &str) -> Option<Type> {
@@ -362,30 +385,78 @@ fn parse_ty(x: &str) -> Option<Type> {
         "s" => Int16,
         "i" => Int32,
         "f" => Float,
-        _ => return None
+        _ => return None,
     })
 }
 
 fn parse_location(location: &str) -> Option<Location> {
     use Register::*;
     Some(match location {
-        "sp" => Location { register: SP, indirect: false },
-        "@sp" => Location { register: SP, indirect: true },
-        "r1" => Location { register: R1, indirect: false },
-        "@r1" => Location { register: R1, indirect: true },
-        "r2" => Location { register: R2, indirect: false },
-        "@r2" => Location { register: R2, indirect: true },
-        "r3" => Location { register: R3, indirect: false },
-        "@r3" => Location { register: R3, indirect: true },
-        "r4" => Location { register: R4, indirect: false },
-        "@r4" => Location { register: R4, indirect: true },
-        "r5" => Location { register: R5, indirect: false },
-        "@r5" => Location { register: R5, indirect: true },
-        "r6" => Location { register: R6, indirect: false },
-        "@r6" => Location { register: R6, indirect: true },
-        "r7" => Location { register: R7, indirect: false },
-        "@r7" => Location { register: R7, indirect: true },
-        _ => return None
+        "sp" => Location {
+            register: SP,
+            indirect: false,
+        },
+        "@sp" => Location {
+            register: SP,
+            indirect: true,
+        },
+        "r1" => Location {
+            register: R1,
+            indirect: false,
+        },
+        "@r1" => Location {
+            register: R1,
+            indirect: true,
+        },
+        "r2" => Location {
+            register: R2,
+            indirect: false,
+        },
+        "@r2" => Location {
+            register: R2,
+            indirect: true,
+        },
+        "r3" => Location {
+            register: R3,
+            indirect: false,
+        },
+        "@r3" => Location {
+            register: R3,
+            indirect: true,
+        },
+        "r4" => Location {
+            register: R4,
+            indirect: false,
+        },
+        "@r4" => Location {
+            register: R4,
+            indirect: true,
+        },
+        "r5" => Location {
+            register: R5,
+            indirect: false,
+        },
+        "@r5" => Location {
+            register: R5,
+            indirect: true,
+        },
+        "r6" => Location {
+            register: R6,
+            indirect: false,
+        },
+        "@r6" => Location {
+            register: R6,
+            indirect: true,
+        },
+        "r7" => Location {
+            register: R7,
+            indirect: false,
+        },
+        "@r7" => Location {
+            register: R7,
+            indirect: true,
+        },
+        _ => return None,
     })
 }
 
@@ -398,7 +469,7 @@ fn parse_condition(condition: &str) -> Option<Condition> {
         "<" => LT,
         "!=" => NE,
         "<=" => LE,
-        _ => return None
+        _ => return None,
     })
 }
 

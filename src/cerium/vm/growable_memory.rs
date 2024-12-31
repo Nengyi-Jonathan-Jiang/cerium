@@ -6,6 +6,12 @@ pub struct GrowableMemoryBlock {
     pub memory: MemoryBuffer,
 }
 
+impl GrowableMemoryBlock {
+    pub fn capacity(&self) -> CeWord {
+        self.memory.size()
+    }
+}
+
 impl Default for GrowableMemoryBlock {
     fn default() -> Self {
         Self::new()

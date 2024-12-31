@@ -1,3 +1,5 @@
+pub mod ansi;
+
 #[macro_export]
 macro_rules! try_do {
     (result $expr: expr) => {

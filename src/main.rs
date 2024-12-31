@@ -1,9 +1,9 @@
 pub use crate::cerium::assembler::CeriumAssembler;
-use crate::cerium::vm::{CeInt32, DebugCeriumVM};
 pub use crate::cerium::vm::CeriumVM;
+use crate::cerium::vm::DebugCeriumVM;
+use crate::util::ansi::enable_ansi;
 use std::env::args;
 use std::fs::File;
-use std::io;
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -11,6 +11,8 @@ mod cerium;
 mod util;
 
 fn main() {
+    enable_ansi();
+
     let mut args = args().skip(1);
     match args.next() {
         None => help(),
@@ -88,12 +90,8 @@ fn assemble_and_debug(input_path: &str) {
         return;
     }
 
-    let mut dummy_str = String::new();
-
     while !vm.is_done() {
-        let _ = io::stdin().read_line(&mut dummy_str);
         vm.execute_next_instruction();
-
     }
     println!("Done");
 }

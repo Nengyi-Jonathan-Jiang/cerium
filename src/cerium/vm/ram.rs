@@ -15,6 +15,13 @@ pub struct RAM {
 impl RAM {
     const HEAP_PTR_BIT: CeWord = (1 << (size_of::<CeWord>() * 8 - 1)) as CeWord;
 
+    pub fn stack_capacity(&self) -> CeWord {
+        self.stack_memory.capacity()
+    }
+    pub fn heap_capacity(&self) -> CeWord {
+        self.heap_memory.capacity()
+    }
+    
     fn is_heap_ptr(ptr: Pointer) -> bool {
         (CeWord::from(ptr) & Self::HEAP_PTR_BIT) != 0
     }
