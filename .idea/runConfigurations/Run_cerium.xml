@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Run cerium" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
     <option name="buildProfileId" value="release" />
-    <option name="command" value="run --package cerium --bin cerium debug-asm &quot;examples/fibonacci/fibonacci.casm&quot;" />
+    <option name="command" value="run --package cerium --bin cerium debug-asm examples/fibonacci/fibonacci.casm" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <envs />
     <option name="emulateTerminal" value="true" />

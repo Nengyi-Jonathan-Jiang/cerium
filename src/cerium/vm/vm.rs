@@ -23,7 +23,7 @@ pub struct CeriumVM {
 
 impl CASMInstructionSourceStream for CeriumVM {
     fn get_next<T: EndianConversion>(&mut self) -> T {
-        self.get_next_and_inc_ip()
+        self.get_next_instruction_and_inc_ip()
     }
 }
 
@@ -79,7 +79,7 @@ impl CeriumVM {
     }
 
     #[inline(always)]
-    fn get_next_and_inc_ip<T: EndianConversion>(&mut self) -> T {
+    pub(crate) fn get_next_instruction_and_inc_ip<T: EndianConversion>(&mut self) -> T {
         let res: T = self
             .memory
             .at(Pointer::from(self.instruction_ptr))

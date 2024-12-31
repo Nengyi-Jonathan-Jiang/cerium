@@ -3,9 +3,19 @@
 version = 3
 
 [[package]]
+name = "ansi-width"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "219e3ce6f2611d83b51ec2098a12702112c29e57203a6b0a0929b2cddb486608"
+dependencies = [
+ "unicode-width",
+]
+
+[[package]]
 name = "cerium"
 version = "0.1.0"
 dependencies = [
+ "ansi-width",
  "enable-ansi-support",
 ]
 
@@ -17,6 +27,12 @@ checksum = "aa4ff3ae2a9aa54bf7ee0983e59303224de742818c1822d89f07da9856d9bc60"
 dependencies = [
  "windows-sys",
 ]
+
+[[package]]
+name = "unicode-width"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "windows-sys"
