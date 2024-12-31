@@ -97,7 +97,6 @@ fn assemble_and_debug(input_path: &str) {
 }
 
 fn execute_ce_binary(path: &str) {
-    let path = path;
     let mut file = File::open(Path::new(path)).expect(&format!("File not found: {}", path));
     let mut buffer: Vec<u8> = Vec::new();
     file.read_to_end(&mut buffer)
