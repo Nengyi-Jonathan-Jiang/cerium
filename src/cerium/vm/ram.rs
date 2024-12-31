@@ -3,6 +3,7 @@ use super::growable_memory::GrowableMemoryBlock;
 use super::types::{Pointer, Size};
 use super::CeWord;
 use crate::cerium::memory_buffer::{EndianConversion, MemoryBufferPtr};
+use std::mem::size_of;
 
 #[derive(Default)]
 pub struct RAM {
@@ -70,7 +71,7 @@ impl RAM {
         let heap_ptr = Self::ptr_to_mem_ptr(ptr);
         self.allocator.deallocate(heap_ptr)
     }
-    
+
     pub fn memcpy(&mut self, src: Pointer, dst: Pointer, length: Size) -> Result<(), String> {
         if let Err(err) = self.resize_mem_to_fit(src + length) {
             return Err(err);
@@ -81,11 +82,33 @@ impl RAM {
 
         let dst_ptr = self.at::<i8>(dst)?.ptr() as *mut u8;
         let src_ptr = self.at::<i8>(src)?.ptr() as *const u8;
-        
+
         unsafe {
             std::ptr::copy(src_ptr, dst_ptr, CeWord::from(length) as usize);
         }
-        
+
+        Ok(())
+    }
+
+    pub unsafe fn write(
+        &mut self,
+        dst: Pointer,
+        data: impl IntoIterator<Item = u8>,
+    ) -> Result<(), String> {
+        let data = data.into_iter().collect::<Box<[_]>>();
+        let length = Size::from(data.len() as CeWord);
+
+        if let Err(err) = self.resize_mem_to_fit(dst + length) {
+            return Err(err);
+        }
+
+        let dst_ptr = self.at::<i8>(dst)?.ptr() as *mut u8;
+        let src_ptr = data.as_ptr() as *const u8;
+
+        unsafe {
+            std::ptr::copy(src_ptr, dst_ptr, CeWord::from(length) as usize);
+        }
+
         Ok(())
     }
 }

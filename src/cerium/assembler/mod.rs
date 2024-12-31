@@ -18,7 +18,7 @@ impl CeriumAssembler {
             label_locations: Default::default()
         };
         
-        for instruction in instructions {
+        for instruction in instructions.into_iter().cloned() {
             assembler.write_instruction(instruction)
         }
         

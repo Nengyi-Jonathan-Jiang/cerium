@@ -1,3 +1,4 @@
+use std::mem::size_of;
 use super::{CeWord, Pointer};
 use crate::cerium::memory_buffer::{EndianConversion, MemoryBuffer, MemoryBufferPtr};
 

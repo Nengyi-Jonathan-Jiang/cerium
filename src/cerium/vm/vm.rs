@@ -4,6 +4,7 @@ use super::register::Register;
 use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, Pointer, RAM};
 use crate::cerium::memory_buffer::{EndianConversion, MemoryBuffer, MemoryBufferPtr};
 use std::hint::unreachable_unchecked;
+use std::mem::size_of;
 use std::ops::*;
 use text_io::read;
 
@@ -12,21 +13,41 @@ pub struct CeriumVM {
     memory: RAM,
     registers: [Register; 8],
     instruction_ptr: CeWord,
-    program: MemoryBuffer,
     done: bool,
 }
 
 impl CeriumVM {
-    pub fn new() -> CeriumVM { Default::default() }
+    pub fn new() -> CeriumVM {
+        Default::default()
+    }
 
-    pub fn load_program(&mut self, program: impl Into<MemoryBuffer>) {
-        self.program = program.into();
+    pub fn load_program(
+        &mut self,
+        program: impl IntoIterator<Item = u8>,
+    ) -> Result<(), String> {
+        let program_bytes = program.into_iter().collect::<Vec<_>>();
+        let program_len = program_bytes.len() as CeInt32;
+
+        unsafe {
+            if let Err(err) = self.memory.write(Pointer::from(0), program_bytes) {
+                return Err(err);
+            }
+        }
+
+        // Set the instruction pointer to zero
         self.instruction_ptr = 0;
+        // Set the stack pointer to point after the program bytes
+        unsafe { self.registers[0].get().write(program_len) }
+
+        Ok(())
     }
 
     #[inline(always)]
     fn get_register<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
-        self.registers.get_mut((bits & 0b111) as usize).unwrap().get()
+        self.registers
+            .get_mut((bits & 0b111) as usize)
+            .unwrap()
+            .get()
     }
 
     #[inline(always)]
@@ -51,7 +72,8 @@ impl CeriumVM {
 
     #[inline(always)]
     fn get_next_and_inc_ip<T: EndianConversion>(&mut self) -> T {
-        let res = self.program.get::<T>(self.instruction_ptr as usize).get();
+        let res: T = self.memory.at(Pointer::from(self.instruction_ptr)).unwrap().get();
+        // let res = self.program.get::<T>(self.instruction_ptr as usize).get();
         self.instruction_ptr += size_of::<T>() as CeWord;
         res
     }
@@ -74,35 +96,42 @@ impl CeriumVM {
                         0b01 => self.do_binop::<CeInt16>($b2, $b3, $op),
                         0b10 => self.do_binop::<CeInt32>($b2, $b3, $op),
                         0b11 => panic!($reason),
-                        _ => unsafe {unreachable_unchecked()}
+                        _ => unsafe { unreachable_unchecked() },
                     }
                 };
-                
+
                 ($op: expr, $type_part: expr, $b2: expr, $b3: expr) => {
                     match $type_part {
                         0b00 => self.do_binop::<CeInt8>($b2, $b3, $op),
                         0b01 => self.do_binop::<CeInt16>($b2, $b3, $op),
                         0b10 => self.do_binop::<CeInt32>($b2, $b3, $op),
                         0b11 => self.do_binop::<CeFloat>($b2, $b3, $op),
-                        _ => unsafe {unreachable_unchecked()}
+                        _ => unsafe { unreachable_unchecked() },
                     }
                 };
                 (call $method: ident, $type_part: expr, $b2: expr, $b3: expr) => {
-                    match $type_part { // JMP
-                        0b00 => self.$method ::<CeInt8>($b2, $b3),
-                        0b01 => self.$method ::<CeInt16>($b2, $b3),
-                        0b10 => self.$method ::<CeInt32>($b2, $b3),
-                        0b11 => self.$method ::<CeFloat>($b2, $b3),
-                        _ => unsafe {unreachable_unchecked()}
+                    match $type_part {
+                        // JMP
+                        0b00 => self.$method::<CeInt8>($b2, $b3),
+                        0b01 => self.$method::<CeInt16>($b2, $b3),
+                        0b10 => self.$method::<CeInt32>($b2, $b3),
+                        0b11 => self.$method::<CeFloat>($b2, $b3),
+                        _ => unsafe { unreachable_unchecked() },
                     }
                 };
             }
 
             match instruction_part {
                 0b0000 => (), // NO-OP
-                0b0001 => do_instruction!(BitXor::bitxor, type_part, b2, b3; "Cannot apply XOR to float"),
-                0b0010 => do_instruction!(BitOr::bitor, type_part, b2, b3; "Cannot apply OR to float"),
-                0b0011 => do_instruction!(BitAnd::bitand, type_part, b2, b3; "Cannot apply AND to float"),
+                0b0001 => {
+                    do_instruction!(BitXor::bitxor, type_part, b2, b3; "Cannot apply XOR to float")
+                }
+                0b0010 => {
+                    do_instruction!(BitOr::bitor, type_part, b2, b3; "Cannot apply OR to float")
+                }
+                0b0011 => {
+                    do_instruction!(BitAnd::bitand, type_part, b2, b3; "Cannot apply AND to float")
+                }
                 0b0100 | 0b0101 => (), // NO-OP
                 0b0110 => do_instruction!(Shl::shl, type_part, b2, b3; "Cannot apply SHL to float"),
                 0b0111 => do_instruction!(Shr::shr, type_part, b2, b3; "Cannot apply SHR to float"),
@@ -114,12 +143,13 @@ impl CeriumVM {
                 0b1101 => do_instruction!(modulo, type_part, b2, b3),
                 0b1110 => do_instruction!(call cmp_instr, type_part, b2, b3),
                 0b1111 => do_instruction!(call jmp_instr, type_part, b2, b3),
-                _ => unsafe { unreachable_unchecked() }
+                _ => unsafe { unreachable_unchecked() },
             }
         } else {
             let instruction_part = curr_instruction_byte >> 4;
             match instruction_part {
-                0b0000 => { // MOV
+                0b0000 => {
+                    // MOV
                     let b2 = self.get_next_and_inc_ip::<u8>();
                     let src_t = (curr_instruction_byte >> 2) & 0b11;
                     let dst_t = curr_instruction_byte & 0b11;
@@ -130,10 +160,16 @@ impl CeriumVM {
                                 let val = self.get_location::<$t>($b2 >> 4).get();
                                 match $t2 {
                                     0b00 => self.get_location::<CeInt8>($b2).write((val as CeInt8)),
-                                    0b01 => self.get_location::<CeInt16>($b2).write((val as CeInt16)),
-                                    0b10 => self.get_location::<CeInt32>($b2).write((val as CeInt32)),
-                                    0b11 => self.get_location::<CeFloat>($b2).write((val as CeFloat)),
-                                    _ => unreachable_unchecked()
+                                    0b01 => {
+                                        self.get_location::<CeInt16>($b2).write((val as CeInt16))
+                                    }
+                                    0b10 => {
+                                        self.get_location::<CeInt32>($b2).write((val as CeInt32))
+                                    }
+                                    0b11 => {
+                                        self.get_location::<CeFloat>($b2).write((val as CeFloat))
+                                    }
+                                    _ => unreachable_unchecked(),
                                 }
                             }
                         };
@@ -144,18 +180,21 @@ impl CeriumVM {
                         0b01 => mov_match_case!(type = CeInt16, dst_t, b2),
                         0b10 => mov_match_case!(type = CeInt32, dst_t, b2),
                         0b11 => mov_match_case!(type = CeFloat, dst_t, b2),
-                        _ => unsafe { unreachable_unchecked() }
+                        _ => unsafe { unreachable_unchecked() },
                     }
                 }
-                0b0001 => { // LOD8
+                0b0001 => {
+                    // LOD8
                     let dat = self.get_next_and_inc_ip::<CeInt8>();
                     self.lod_instr(curr_instruction_byte, dat);
                 }
-                0b0010 => { // LOD16
+                0b0010 => {
+                    // LOD16
                     let dat = self.get_next_and_inc_ip::<CeInt16>();
                     self.lod_instr(curr_instruction_byte, dat);
                 }
-                0b0011 => { // LOD32
+                0b0011 => {
+                    // LOD32
                     let dat = self.get_next_and_inc_ip::<CeInt32>();
                     self.lod_instr(curr_instruction_byte, dat);
                 }
@@ -170,9 +209,12 @@ impl CeriumVM {
                     let src = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
                     let dest = self.get_location::<CeInt32>(b2).get() as CeWord;
 
-                    self.memory.memcpy(src.into(), dest.into(), size.into()).unwrap();
+                    self.memory
+                        .memcpy(src.into(), dest.into(), size.into())
+                        .unwrap();
                 }
-                0b0110 => { // NEW
+                0b0110 => {
+                    // NEW
                     let b2 = self.get_next_and_inc_ip::<u8>();
                     let size = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
                     let res = CeWord::from(self.memory.allocate(size).unwrap());
@@ -181,12 +223,14 @@ impl CeriumVM {
                         self.get_location::<CeInt32>(b2).write(res as CeInt32);
                     }
                 }
-                0b0111 => { // DEL
+                0b0111 => {
+                    // DEL
                     let b2 = self.get_next_and_inc_ip::<u8>();
                     let src = self.get_location::<CeInt32>(b2 >> 4).get() as CeWord;
                     self.memory.deallocate(src.into()).unwrap();
                 }
-                0b1000 => { // NEG
+                0b1000 => {
+                    // NEG
                     let type_part = (curr_instruction_byte >> 2) & 0b11;
                     let b2 = self.get_next_and_inc_ip::<u8>();
 
@@ -195,7 +239,7 @@ impl CeriumVM {
                         0b01 => self.do_unop::<CeInt16>(b2, Neg::neg),
                         0b10 => self.do_unop::<CeInt32>(b2, Neg::neg),
                         0b11 => self.do_unop::<CeFloat>(b2, Neg::neg),
-                        _ => unsafe { unreachable_unchecked() }
+                        _ => unsafe { unreachable_unchecked() },
                     }
                 }
                 0b1001 => {
@@ -208,19 +252,23 @@ impl CeriumVM {
                         0b01 => self.do_unop::<CeInt16>(b2, Not::not),
                         0b10 => self.do_unop::<CeInt32>(b2, Not::not),
                         0b11 => panic!("Cannot apply bitwise negation to float"),
-                        _ => unsafe { unreachable_unchecked() }
+                        _ => unsafe { unreachable_unchecked() },
                     }
                 }
                 0b1010 => {
                     print!("<CeriumVM> Enter a number: ");
                     unsafe {
-                        self.get_location::<CeInt32>(curr_instruction_byte).write(read!());
+                        self.get_location::<CeInt32>(curr_instruction_byte)
+                            .write(read!());
                     }
                 }
                 0b1011 => {
-                    println!("{}", self.get_location::<CeInt32>(curr_instruction_byte).get());
+                    println!(
+                        "{}",
+                        self.get_location::<CeInt32>(curr_instruction_byte).get()
+                    );
                 }
-                _ => unsafe { unreachable_unchecked() }
+                _ => unsafe { unreachable_unchecked() },
             }
         }
     }
@@ -266,7 +314,9 @@ impl CeriumVM {
     #[inline(always)]
     fn cmp_instr<T: EndianConversion + PartialOrd + From<i8>>(&mut self, b2: u8, b3: u8) {
         let result = self.test_condition::<T>(b2) as i8;
-        unsafe { self.get_location::<CeInt8>(b3 >> 4).write(result); }
+        unsafe {
+            self.get_location::<CeInt8>(b3 >> 4).write(result);
+        }
     }
 
     #[inline(always)]
@@ -274,7 +324,9 @@ impl CeriumVM {
         unsafe { self.get_location::<T>(loc).write(dat) }
     }
 
-    pub fn is_done(&self) -> bool { self.done }
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
 }
 
 fn modulo<T: Add<Output = T> + Rem<Output = T> + Copy>(x: T, m: T) -> T {
