@@ -1,2 +1,3 @@
 /target
 /.idea/vcs.xml
+!/target/release/cerium.exe
