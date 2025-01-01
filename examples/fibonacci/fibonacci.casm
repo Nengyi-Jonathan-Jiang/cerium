@@ -1,5 +1,5 @@
 // Jump past all the function definitions
-    lod r1 <- PROGRAM_START
+    mov i r1 <- PROGRAM_START
     jmp r1 always
 
 // FIB_RECURSE
@@ -32,7 +32,7 @@ FIB_RECURSE:
     sub i r1 <- r1 - r6
     // Return if (r1 = input - 2) <= 0. That is, return if (input <= 2)
     // Note that at this point, we already wrote the value 1 as the return value.
-    lod r6 <- FIB_RECURSE_RET
+    mov i r6 <- FIB_RECURSE_RET
     jmp r6 if i r1 <= 0
 
     // Otherwise, we actually have to do some computing.
@@ -59,7 +59,7 @@ FIB_RECURSE:
     // Now we prepare to call (recursively!) FIB(input - 1)
     
     // Store FIB_RECURSE_C1 (the return location) at sp 
-    lod r6 <- FIB_RECURSE_C1
+    mov i r6 <- FIB_RECURSE_C1
     mov i @sp <- i r6
     
     // Now the stack looks like:
@@ -89,7 +89,7 @@ FIB_RECURSE:
     add i sp <- sp + r6
     // I'm too lazy to draw the stack but you can imagine that the stack is now ready for calling FIB again!
     // Call FIB
-    lod r6 <- FIB_RECURSE
+    mov i r6 <- FIB_RECURSE
     jmp r6 always
     FIB_RECURSE_C1:
     
@@ -107,7 +107,7 @@ FIB_RECURSE:
 
     // prepare to call FIB(input - 2)
     // Store FIB_RECURSE_C2 (the return location) at sp
-    lod r6 <- FIB_RECURSE_C2
+    mov i r6 <- FIB_RECURSE_C2
     mov i @sp <- i r6
     
     // Stack looks like:
@@ -131,7 +131,7 @@ FIB_RECURSE:
     mov i r6 <- 12
     add i sp <- sp + r6
     // Call FIB(input - 2)!!!!!! yay
-    lod r6 <- FIB_RECURSE
+    mov i r6 <- FIB_RECURSE
     jmp r6 always
     FIB_RECURSE_C2:
     // And we're back. Decrement sp by 16.
@@ -198,7 +198,7 @@ PROGRAM_START:
     mov i r6 <- 4
     add i r1 <- sp + r6
     // Store PROGRAM_C1 (the return location) at (r1 = sp + 4). This will be the return location expected by FIB_RECURSE
-    lod @r1 <- PROGRAM_C1
+    mov i @r1 <- PROGRAM_C1
 
     // Now stack looks like:
     // sp + | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10| 11|
@@ -213,7 +213,7 @@ PROGRAM_START:
     //      ^----(input)----^--PROGRAM_C1---^--(&input==0)--^
 
     // Go to FIB_RECURSE
-    lod r6 <- FIB_RECURSE
+    mov i r6 <- FIB_RECURSE
     jmp r6 always
     PROGRAM_C1:
 
@@ -221,8 +221,8 @@ PROGRAM_START:
     // sp + |-20|-19|-18|-17|-16|-15| ...
     //      ^--FIB(input)---^
 
-	// Decrement sp by 20
-    lod r6 <- i 20
+    // Decrement sp by 20
+    mov i r6 <- 20
     sub i sp <- sp - r6
 
 	// Now stack should be

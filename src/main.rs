@@ -62,7 +62,7 @@ fn assemble_and_execute(input_path: &str) {
 
     let mut vm = CeriumVM::new();
 
-    if let Err(err) = vm.load_program(result_bytes.into_iter().cloned()) {
+    if let Err(err) = vm.load_program(result_bytes.iter().cloned()) {
         println!("Error loading program: {}", err);
         return;
     }
@@ -85,7 +85,7 @@ fn assemble_and_debug(input_path: &str) {
 
     let mut vm = DebugCeriumVM::new();
 
-    if let Err(err) = vm.load_program(result_bytes.into_iter().cloned()) {
+    if let Err(err) = vm.load_program(result_bytes.iter().cloned()) {
         println!("Error loading program: {}", err);
         return;
     }

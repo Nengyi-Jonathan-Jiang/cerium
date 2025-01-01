@@ -22,7 +22,7 @@ impl CeriumAssembler {
             label_locations: Default::default(),
         };
 
-        for instruction in instructions.into_iter().cloned() {
+        for instruction in instructions.iter().cloned() {
             assembler.write_instruction(instruction)
         }
 
@@ -281,55 +281,23 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
                         Lod16(dst, value as CeInt16)
                     }
                     Type::Int32 => {
-                        let value = parse_integral_value(src_item)?;
-
-                        Lod32(dst, value as CeInt32)
+                        if let Some(value) = parse_integral_value(src_item) {
+                            // Integer constant
+                            Lod32(dst, value as CeInt32)
+                        }
+                        else if src_item.chars().all(is_label_character) {
+                            // For i32, we can also load labels
+                            LodLabel(dst, src_item.to_owned())
+                        }
+                        else {
+                            return None;
+                        }
                     }
                     Type::Float => {
                         let value: f32 = try_do!(result src_item.parse());
 
                         Lod32(dst, unsafe { mem::transmute::<f32, CeInt32>(value) }.to_big_endian())                
                     }
-                }
-            }
-        }
-        "lod" => {
-            let dest = parse_location(items.next()?)?;
-            items.next()?;
-            match items.next()? {
-                "b" => {
-                    let value = parse_integral_value(items.next()?)?;
-                   
-                    if (value & 0xffffff00) != 0 && (value & 0xffffff00) != 0xffffff00 {
-                        return None;
-                    }
-                  
-                    Lod8(dest, value as CeInt8)
-                }
-                "s" => {
-                    let value = parse_integral_value(items.next()?)?;
-                    if (value & 0xffff0000) != 0 && (value & 0xffff0000) != 0xffff0000 {
-                        return None;
-                    }
-
-                    Lod16(dest, value as CeInt16)
-                }
-                "i" => {
-                    let value = parse_integral_value(items.next()?)?;
-
-                    Lod32(dest, value as CeInt32)
-                }
-                "f" => {
-                    let value: f32 = try_do!(result items.next()?.parse());
-
-                    Lod32(dest, unsafe { mem::transmute::<f32, CeInt32>(value) }.to_big_endian())
-                }
-                label => {
-                    if !label.chars().all(is_label_character) {
-                        return None;
-                    }
-
-                    LodLabel(dest, label.to_owned())
                 }
             }
         }

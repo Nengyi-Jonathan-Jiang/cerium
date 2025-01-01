@@ -368,12 +368,12 @@ impl Debug for CASMInstruction {
             CASMInstruction::Lod8(dst, dat) => {
                 write!(
                     f,
-                    "{}lod {}{:?} {}<- {}b {}{:?}{}",
+                    "{}mov {}b {}{:?} {}<- {}{:?}{}",
                     red(),
+                    cyan(),
                     green(),
                     dst,
                     red(),
-                    cyan(),
                     purple(),
                     dat,
                     reset()
@@ -382,12 +382,12 @@ impl Debug for CASMInstruction {
             CASMInstruction::Lod16(dst, dat) => {
                 write!(
                     f,
-                    "{}lod {}{:?} {}<- {}s {}{:?}{}",
+                    "{}mov {}s {}{:?} {}<- {}{:?}{}",
                     red(),
+                    cyan(),
                     green(),
                     dst,
                     red(),
-                    cyan(),
                     purple(),
                     dat,
                     reset()
@@ -396,12 +396,12 @@ impl Debug for CASMInstruction {
             CASMInstruction::Lod32(dst, dat) => {
                 write!(
                     f,
-                    "{}lod {}{:?} {}<- {}i {}{:?}{}",
+                    "{}mov {}i {}{:?} {}<- {}{:?}{}",
                     red(),
+                    cyan(),
                     green(),
                     dst,
                     red(),
-                    cyan(),
                     purple(),
                     dat,
                     reset()
@@ -410,8 +410,9 @@ impl Debug for CASMInstruction {
             CASMInstruction::LodLabel(dst, dat) => {
                 write!(
                     f,
-                    "{}lod {}{:?} {}<- {}{:?}",
+                    "{}mov {}i {}{:?} {}<- {}{:?}",
                     red(),
+                    cyan(),
                     green(),
                     dst,
                     red(),
