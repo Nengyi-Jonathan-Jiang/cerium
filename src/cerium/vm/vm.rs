@@ -222,7 +222,7 @@ impl CeriumVM {
                         .read_line(&mut input)
                         .expect("Failed to read input");
                     
-                    if !io::stdout().is_terminal() {
+                    if !io::stdout().is_terminal() || !io::stdin().is_terminal() {
                         print!("{}", input);
                     }
 
