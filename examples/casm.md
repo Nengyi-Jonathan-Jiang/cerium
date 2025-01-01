@@ -41,20 +41,6 @@ you have to actually do an explicit conversion (explained later)
 Instructions are typically composed a name and some *locations* and 
 *types*.
 
-### Lod
-The `lod` instruction loads a constant value into a location. It is written as
-```
-lod [location] <- [type] [constant]
-```
-For example, to load the 8-bit integer `-46` into the `r1` register,
-one would write
-```
-lod r1 <- b -46
-```
-Integral constants can also be written in hexidecimal notation with 
-the prefix `0x`. Float constants can be anything parseable by Rust's
-`parse::<f32>()` function.
-
 ### Mov
 The `mov` instruction copies a value from one location to another, possibly
 with a type conversion. It is the only instruction that can perform type 
@@ -70,6 +56,22 @@ mov s r2 <- f @r1
 
 All conversions are valid. They are implemented as primitive type casts in 
 Rust. There are no restrictions on the locations moved to and from. 
+
+In addition, the `mov` instruction can write a constant to a location (and
+it is the only instruction that can access constants). The syntax for writing
+a constant to a location is
+```
+mov [type] [location] <- constant]
+```
+For example, to write the 8-bit integer `-46` into the `r1` register,
+one would write
+```
+mov b r1 <- -46
+```
+Integral constants can also be written in hexidecimal notation with 
+the prefix `0x`. Float constants can be anything parseable by Rust's
+`parse::<f32>()` function.
+
 
 ### Arithmetic and bitwise operations
 Arithmetic and bitwise operations with two operands are written as 
@@ -144,16 +146,15 @@ convenient jumping targets. To declare a label, write
 [name]:
 ```
 where `[name]` is a sequence of uppercase letters, digits, 
-and underscores. To use a label, `lod` it into a location. The 
-syntax is slightly modified and you do not need to specify the 
-type (it is automatically `i`). For example,
+and underscores. To use a label, `mov` it into a location (use
+the type `i`). For example,
 ```
 LOOP_START:
 
 // Do stuff here
 
 // Go to LOOP_START if r2 >= 0
-lod r1 <- LOOP_START
+mov i r1 <- LOOP_START
 jmp r1 if r2 >= 0
 ```
 
@@ -185,9 +186,9 @@ To stop execution immediately, `halt`. For example, the
 following snipped halts if r3, interpreted as a 32-bit integer, has 
 the value 264
 ```
-lod r2 <- i 264
+mov i r2 <- 264
 sub i r2 <- r3 - r2    // Now r2 has (r3 - 264) 
-lod r1 <- OK
+mov i r1 <- OK
 jmp r1 if i r2 != 0    // Go to OK if (r3 - 264 != 0)
 // We did not jump so r3 must be 264.
 halt
@@ -230,5 +231,5 @@ so you don't need to tell it the size.
 Cerium assembly (.casm) has inline comments prefixed by `//`.
 Comments last until the end of the line they are on. For example,
 ```
-lod r1 <- i 4639     // I love FRC team 4639! 
+mov i r1 <- 4639     // I love FRC team 4639! 
 ```
