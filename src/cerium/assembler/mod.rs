@@ -207,6 +207,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
 
         // Other operations
         "jmp" => {
+            // jmp [tgt] ( always | if [ty] [src] [cnd] )
             let tgt = parse_location(items.next()?)?;
             let (ty, src, cnd) = match items.next()? {
                 "always" => (
@@ -240,17 +241,56 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             Cmp { ty, src, dst, cnd }
         }
         "mov" => {
+            // mov [dst_ty] [dst] <- [src_ty] [src]
+            // mov [dst_ty] [dst] <- [constant]
+
             let dst_ty = parse_ty(items.next()?)?;
             let dst = parse_location(items.next()?)?;
             items.next()?;
-            let src_ty = parse_ty(items.next()?)?;
-            let src = parse_location(items.next()?)?;
 
-            Mov {
-                src_ty,
-                dst_ty,
-                src,
-                dst,
+            let src_item = items.next()?;
+            if let Some(src_ty) = parse_ty(src_item) {
+                // src is register
+                let src = parse_location(items.next()?)?;
+    
+                Mov {
+                    src_ty,
+                    dst_ty,
+                    src,
+                    dst,
+                }
+            }
+            else {
+                // src is a constant
+                match dst_ty {
+                    Type::Int8 => {
+                        let value = parse_integral_value(src_item)?;
+                       
+                        if (value & 0xffffff00) != 0 && (value & 0xffffff00) != 0xffffff00 {
+                            return None;
+                        }
+                  
+                        Lod8(dst, value as CeInt8)
+                    }
+                    Type::Int16 => {
+                        let value = parse_integral_value(src_item)?;
+                        if (value & 0xffff0000) != 0 && (value & 0xffff0000) != 0xffff0000 {
+                            return None;
+                        }
+
+                        Lod16(dst, value as CeInt16)
+                    }
+                    Type::Int32 => {
+                        let value = parse_integral_value(src_item)?;
+
+                        Lod32(dst, value as CeInt32)
+                    }
+                    Type::Float => {
+                        let value: f32 = try_do!(result src_item.parse());
+
+                        Lod32(dst, unsafe { mem::transmute::<f32, CeInt32>(value) }.to_big_endian())                
+                    }
+                }
             }
         }
         "lod" => {
@@ -259,10 +299,11 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             match items.next()? {
                 "b" => {
                     let value = parse_integral_value(items.next()?)?;
+                   
                     if (value & 0xffffff00) != 0 && (value & 0xffffff00) != 0xffffff00 {
                         return None;
                     }
-
+                  
                     Lod8(dest, value as CeInt8)
                 }
                 "s" => {
