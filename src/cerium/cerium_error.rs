@@ -44,6 +44,7 @@ macro_rules! create_basic_error_type {
     };
 }
 
+create_basic_error_type!(BasicCeriumError, "{}");
 create_basic_error_type!(CeriumVMError, "CeriumVM Error: {}");
 create_basic_error_type!(CeriumAssemblerError, "CeriumAssembler Error: {}");
 create_basic_error_type!(CeriumVMHeapAccessError, "CeriumVM Heap Access Error: {}");

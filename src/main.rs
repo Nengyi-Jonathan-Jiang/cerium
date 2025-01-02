@@ -1,5 +1,5 @@
 pub use crate::cerium::assembler::CeriumAssembler;
-use crate::cerium::cerium_error::CeriumError;
+use crate::cerium::cerium_error::{BasicCeriumError, CeriumError};
 pub use crate::cerium::vm::CeriumVM;
 use crate::cerium::vm::DebugCeriumVM;
 use crate::util::ansi::colors::{red, reset};
@@ -22,15 +22,23 @@ fn main() {
         None => help(),
         Some(first_arg) => match first_arg.as_str() {
             "assemble" => assemble(
-                args.next().expect("No input file provided").as_str(),
-                args.next().expect("No output file provided").as_str(),
+                args.next()
+                    .unwrap_or_else(|| BasicCeriumError::throw_str("No input file provided"))
+                    .as_str(),
+                args.next()
+                    .unwrap_or_else(|| BasicCeriumError::throw_str("No output file provided"))
+                    .as_str(),
             ),
-            "run-asm" => {
-                assemble_and_execute(args.next().expect("No input file provided").as_str())
-            }
-            "debug-asm" => {
-                assemble_and_debug(args.next().expect("No input file provided").as_str())
-            }
+            "run-asm" => assemble_and_execute(
+                args.next()
+                    .unwrap_or_else(|| BasicCeriumError::throw_str("No input file provided"))
+                    .as_str(),
+            ),
+            "debug-asm" => assemble_and_debug(
+                args.next()
+                    .unwrap_or_else(|| BasicCeriumError::throw_str("No input file provided"))
+                    .as_str(),
+            ),
             _ => execute_ce_binary(first_arg.as_str()),
         },
     };
@@ -50,30 +58,33 @@ fn use_panic_handler() {
 }
 
 fn assemble(input_path: &str, output_path: &str) {
-    let mut input_file =
-        File::open(Path::new(input_path)).expect(&format!("File not found: {}", input_path));
+    let mut input_file = open_file(input_path);
     let mut input_file_str: String = String::default();
     input_file
         .read_to_string(&mut input_file_str)
-        .expect("Unable to read input file");
+        .unwrap_or_else(|_| BasicCeriumError::throw_str("Unable to read input file"));
 
     let result_bytes = CeriumAssembler::assemble_casm(input_file_str.as_str());
 
-    let mut output_file =
-        File::create(Path::new(output_path)).expect(&format!("File not found: {}", output_path));
+    let mut output_file = open_file(output_path);
 
     output_file
         .write(&*result_bytes)
-        .expect("Unable to write to output file");
+        .unwrap_or_else(|_| BasicCeriumError::throw_str("Unable to write to output file"));
+}
+
+fn open_file(input_path: &str) -> File {
+    File::open(Path::new(input_path)).unwrap_or_else(|_| {
+        BasicCeriumError::throw_string(format!("File not found: {}", input_path))
+    })
 }
 
 fn assemble_and_execute(input_path: &str) {
-    let mut input_file =
-        File::open(Path::new(input_path)).expect(&format!("File not found: {}", input_path));
+    let mut input_file = open_file(input_path);
     let mut input_file_str: String = String::default();
     input_file
         .read_to_string(&mut input_file_str)
-        .expect("Unable to read input file");
+        .unwrap_or_else(|_| BasicCeriumError::throw_str("Unable to read input file"));
 
     let result_bytes = CeriumAssembler::assemble_casm(input_file_str.as_str());
 
@@ -83,12 +94,11 @@ fn assemble_and_execute(input_path: &str) {
 }
 
 fn assemble_and_debug(input_path: &str) {
-    let mut input_file =
-        File::open(Path::new(input_path)).expect(&format!("File not found: {}", input_path));
+    let mut input_file = open_file(input_path);
     let mut input_file_str: String = String::default();
     input_file
         .read_to_string(&mut input_file_str)
-        .expect("Unable to read input file");
+        .unwrap_or_else(|_| BasicCeriumError::throw_str("Unable to read input file"));
 
     let result_bytes = CeriumAssembler::assemble_casm(input_file_str.as_str());
 
@@ -98,10 +108,10 @@ fn assemble_and_debug(input_path: &str) {
 }
 
 fn execute_ce_binary(path: &str) {
-    let mut file = File::open(Path::new(path)).expect(&format!("File not found: {}", path));
+    let mut file = open_file(path);
     let mut buffer: Vec<u8> = Vec::new();
     file.read_to_end(&mut buffer)
-        .expect("Failed to read file into buffer");
+        .unwrap_or_else(|_| BasicCeriumError::throw_str("Failed to read file into buffer"));
 
     CeriumVM::execute_program(buffer.iter().cloned());
 
