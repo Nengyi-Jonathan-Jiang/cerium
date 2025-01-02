@@ -81,26 +81,30 @@ impl CeriumAssembler {
                 self.write_byte_to_output(((src_ty as u8) << 2) | (dst_ty as u8));
                 self.write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
             }
-            Lod8(loc, val) => {
+            Const8(loc, val) => {
                 self.write_byte_to_output(0b00_01_0000 | loc.to_bits());
                 self.write_byte_to_output(val as u8);
             }
-            Lod16(loc, val) => {
+            Const16(loc, val) => {
                 self.write_byte_to_output(0b00_10_0000 | loc.to_bits());
                 self.write_byte_to_output((val >> 8) as u8);
                 self.write_byte_to_output(val as u8);
             }
-            Lod32(loc, val) => {
+            Const32(loc, val) => {
                 self.write_byte_to_output(0b00_11_0000 | loc.to_bits());
                 self.write_byte_to_output((val >> 24) as u8);
                 self.write_byte_to_output((val >> 16) as u8);
                 self.write_byte_to_output((val >> 8) as u8);
                 self.write_byte_to_output(val as u8);
             }
-            LodLabel(loc, label_name) => {
+            ConstLabel(loc, label_name) => {
                 self.write_byte_to_output(0b00_11_0000 | loc.to_bits());
-
-                self.add_label_placeholder(label_name);
+                self.write_byte_to_output(0);
+                self.write_byte_to_output(0);
+                self.write_byte_to_output(0);
+                self.write_byte_to_output(0);
+                self.label_placeholder_locations
+                    .push((self.output_buffer.len() - 4, label_name));
             }
             Halt => {
                 self.write_byte_to_output(0b01000000);
@@ -153,15 +157,6 @@ impl CeriumAssembler {
     fn save_label_location(&mut self, label_name: String) {
         self.label_locations
             .insert(label_name, self.output_buffer.len());
-    }
-
-    fn add_label_placeholder(&mut self, label_name: String) {
-        self.label_placeholder_locations
-            .push((self.output_buffer.len(), label_name));
-        self.write_byte_to_output(0);
-        self.write_byte_to_output(0);
-        self.write_byte_to_output(0);
-        self.write_byte_to_output(0);
     }
 
     fn populate_label_placeholders(&mut self) -> Option<()> {
@@ -269,22 +264,22 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             } else {
                 // src is a constant
                 match dst_ty {
-                    Type::Int8 => Lod8(dst, parse_i8(src_item)?),
-                    Type::Int16 => Lod16(dst, parse_i16(src_item)?),
+                    Type::Int8 => Const8(dst, parse_i8(src_item)?),
+                    Type::Int16 => Const16(dst, parse_i16(src_item)?),
                     Type::Int32 => {
                         if let Some(value) = parse_i32(src_item) {
                             // Integer constant
-                            Lod32(dst, value as CeInt32)
+                            Const32(dst, value as CeInt32)
                         } else if src_item.chars().all(is_label_character) {
                             // For i32, we can also load labels
-                            LodLabel(dst, src_item.to_owned())
+                            ConstLabel(dst, src_item.to_owned())
                         } else {
                             return None;
                         }
                     }
                     Type::Float => {
                         let value = parse_float_as_i32(src_item)?;
-                        Lod32(dst, value)
+                        Const32(dst, value)
                     }
                 }
             }
@@ -327,15 +322,15 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
         }
         _ => {
             // Raw data: ([type] [value] | [hex byte])*
-            // Note that raw strings are handled separately outside of this function 
-            
+            // Note that raw strings are handled separately outside of this function
+
             let mut items = iter::once(command).chain(items);
             let mut data = Vec::new();
-            
+
             loop {
                 let next = items.next();
                 if let None = next {
-                    break
+                    break;
                 }
                 let next = next.unwrap();
                 // First try to parse data type + value
@@ -344,14 +339,15 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
                         Type::Int8 => data.extend(parse_i8(items.next()?)?.to_be_bytes()),
                         Type::Int16 => data.extend(parse_i16(items.next()?)?.to_be_bytes()),
                         Type::Int32 => data.extend(parse_i32(items.next()?)?.to_be_bytes()),
-                        Type::Float => data.extend(parse_float_as_i32(items.next()?)?.to_be_bytes()),
+                        Type::Float => {
+                            data.extend(parse_float_as_i32(items.next()?)?.to_be_bytes())
+                        }
                     }
                 }
                 // Next try to parse as hex
                 else if let Some(byte) = parse_hex_byte(next) {
                     data.push(byte);
-                }
-                else {
+                } else {
                     return None;
                 }
             }
@@ -364,12 +360,10 @@ fn parse_hex_byte(x: &str) -> Option<u8> {
     if x.len() == 2 {
         if let Ok(byte) = u8::from_str_radix(x, 16) {
             Some(byte)
-        }
-        else {
+        } else {
             None
         }
-    }  
-    else {
+    } else {
         None
     }
 }

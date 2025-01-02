@@ -288,10 +288,10 @@ pub enum CASMInstruction {
         src: Location,
         dst: Location,
     },
-    Lod8(Location, CeInt8),
-    Lod16(Location, CeInt16),
-    Lod32(Location, CeInt32),
-    LodLabel(Location, String),
+    Const8(Location, CeInt8),
+    Const16(Location, CeInt16),
+    Const32(Location, CeInt32),
+    ConstLabel(Location, String),
     Halt,
     Memcpy {
         src: Location,
@@ -365,7 +365,7 @@ impl Debug for CASMInstruction {
                     reset(),
                 )
             }
-            CASMInstruction::Lod8(dst, dat) => {
+            CASMInstruction::Const8(dst, dat) => {
                 write!(
                     f,
                     "{}mov {}b {}{:?} {}<- {}{:?}{}",
@@ -379,7 +379,7 @@ impl Debug for CASMInstruction {
                     reset()
                 )
             }
-            CASMInstruction::Lod16(dst, dat) => {
+            CASMInstruction::Const16(dst, dat) => {
                 write!(
                     f,
                     "{}mov {}s {}{:?} {}<- {}{:?}{}",
@@ -393,7 +393,7 @@ impl Debug for CASMInstruction {
                     reset()
                 )
             }
-            CASMInstruction::Lod32(dst, dat) => {
+            CASMInstruction::Const32(dst, dat) => {
                 write!(
                     f,
                     "{}mov {}i {}{:?} {}<- {}{:?}{}",
@@ -407,7 +407,7 @@ impl Debug for CASMInstruction {
                     reset()
                 )
             }
-            CASMInstruction::LodLabel(dst, dat) => {
+            CASMInstruction::ConstLabel(dst, dat) => {
                 write!(
                     f,
                     "{}mov {}i {}{:?} {}<- {}{:?}",
@@ -658,19 +658,19 @@ impl CASMInstruction {
                     }
                 }
                 0b0001 => {
-                    // LOD8
+                    // CONST8
                     let dat = stream.get_next::<CeInt8>();
-                    CASMInstruction::Lod8(Location::from_bits(curr_instruction_byte).unwrap(), dat)
+                    CASMInstruction::Const8(Location::from_bits(curr_instruction_byte).unwrap(), dat)
                 }
                 0b0010 => {
-                    // LOD16
+                    // CONST16
                     let dat = stream.get_next::<CeInt16>();
-                    CASMInstruction::Lod16(Location::from_bits(curr_instruction_byte).unwrap(), dat)
+                    CASMInstruction::Const16(Location::from_bits(curr_instruction_byte).unwrap(), dat)
                 }
                 0b0011 => {
-                    // LOD32
+                    // CONST32
                     let dat = stream.get_next::<CeInt32>();
-                    CASMInstruction::Lod32(Location::from_bits(curr_instruction_byte).unwrap(), dat)
+                    CASMInstruction::Const32(Location::from_bits(curr_instruction_byte).unwrap(), dat)
                 }
                 0b0100 => CASMInstruction::Halt,
                 0b0101 => {

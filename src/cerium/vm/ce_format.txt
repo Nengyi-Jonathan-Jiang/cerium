@@ -46,13 +46,13 @@ Other operations shall be represented by the following
     0000 -> MOV
         The following four bits shall be the source and dest types
         The following eight bits shall be the source and dest locations
-    0001 -> LOD8
+    0001 -> CONST8
         The following four bits shall be the dest location
         The following byte shall be the data
-    0010 -> LOD16
+    0010 -> CONST16
         The following four bits shall be the dest location
         The following two bytes shall be the data
-    0011 -> LOD32
+    0011 -> CONST32
         The following four bits shall be the dest location
         The following four bytes shall be the data
     0100 -> HALT

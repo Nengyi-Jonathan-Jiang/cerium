@@ -73,15 +73,15 @@ impl DebugCeriumVM {
                 self.vm.execute_next_instruction();
                 self.debug(dst_ty, dst)
             }
-            CASMInstruction::Lod8(loc, _) => {
+            CASMInstruction::Const8(loc, _) => {
                 self.vm.execute_next_instruction();
                 self.debug(Type::Int8, loc)
             }
-            CASMInstruction::Lod16(loc, _) => {
+            CASMInstruction::Const16(loc, _) => {
                 self.vm.execute_next_instruction();
                 self.debug(Type::Int16, loc)
             }
-            CASMInstruction::Lod32(loc, _) => {
+            CASMInstruction::Const32(loc, _) => {
                 self.vm.execute_next_instruction();
                 self.debug(Type::Int32, loc)
             }
@@ -151,7 +151,7 @@ impl DebugCeriumVM {
             // parse_next_instruction will never emit these instructions
             CASMInstruction::Data(_) => unsafe { unreachable_unchecked() },
             CASMInstruction::Label(_) => unsafe { unreachable_unchecked() },
-            CASMInstruction::LodLabel(..) => unsafe { unreachable_unchecked() },
+            CASMInstruction::ConstLabel(..) => unsafe { unreachable_unchecked() },
         }
     }
 

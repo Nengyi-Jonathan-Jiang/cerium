@@ -121,9 +121,9 @@ impl CeriumVM {
 
                 match_cerium_type!(match src_ty => _f(self, dst_ty, src, dst))
             }
-            CASMInstruction::Lod8(loc, dat) => self.lod_instr(loc.to_bits(), dat),
-            CASMInstruction::Lod16(loc, dat) => self.lod_instr(loc.to_bits(), dat),
-            CASMInstruction::Lod32(loc, dat) => self.lod_instr(loc.to_bits(), dat),
+            CASMInstruction::Const8(loc, dat) => self.mov_const(loc.to_bits(), dat),
+            CASMInstruction::Const16(loc, dat) => self.mov_const(loc.to_bits(), dat),
+            CASMInstruction::Const32(loc, dat) => self.mov_const(loc.to_bits(), dat),
             CASMInstruction::Halt => self.done = true,
             CASMInstruction::Memcpy { src, dst, size } => {
                 let size = self.get_word_for_location(size.to_bits()).into();
@@ -252,12 +252,12 @@ impl CeriumVM {
             // parse_next_instruction will never emit these instructions
             CASMInstruction::Data(_) => unsafe { unreachable_unchecked() },
             CASMInstruction::Label(_) => unsafe { unreachable_unchecked() },
-            CASMInstruction::LodLabel(..) => unsafe { unreachable_unchecked() },
+            CASMInstruction::ConstLabel(..) => unsafe { unreachable_unchecked() },
         }
     }
 
     #[inline(always)]
-    fn lod_instr<T: EndianConversion>(&mut self, loc: u8, dat: T) {
+    fn mov_const<T: EndianConversion>(&mut self, loc: u8, dat: T) {
         unsafe { self.get_location::<T>(loc).write(dat) }
     }
 
