@@ -1,5 +1,3 @@
-// #![allow(arithmetic_overflow)]
-
 use super::super::instruction::casm_instruction_parts;
 use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord};
 use crate::cerium::instruction::casm_instruction_parts::{Location, Register, Type};
@@ -38,10 +36,6 @@ impl CASMInstructionSourceStream for DebugCeriumVM {
 }
 
 impl DebugCeriumVM {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
     pub fn load_program(&mut self, program: impl IntoIterator<Item = u8>) {
         let program = program.into_iter().collect::<Vec<_>>();
         self.program_length = program.len();
@@ -102,7 +96,7 @@ impl DebugCeriumVM {
                 self.vm.execute_next_instruction();
 
                 println!(
-                    "{}MEMCPY'ed {} bytes from ptr {} to ptr {}{}",
+                    "{}copied {} bytes from ptr {} to ptr {}{}",
                     yellow(),
                     size,
                     src,

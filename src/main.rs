@@ -126,16 +126,15 @@ fn help() {
     println!("  cerium debug-asm <input-file>              | Runs a .casm file and shows the state of the stack and registers while the program is executing");
 }
 
-trait CeriumVmLike: Sized {
+trait CeriumVmLike: Sized + Default {
     fn load_program(&mut self, program: impl IntoIterator<Item = u8>);
-    fn new() -> Self;
     fn is_done(&self) -> bool;
     fn execute_next_instruction(&mut self);
 
     fn execute_program(program: impl IntoIterator<Item = u8>) {
         let program = program.into_iter().collect::<Vec<_>>();
 
-        let mut vm = Self::new();
+        let mut vm = Self::default();
 
         vm.load_program(program);
 
@@ -150,10 +149,6 @@ impl CeriumVmLike for CeriumVM {
         self.load_program(program)
     }
 
-    fn new() -> Self {
-        Self::new()
-    }
-
     fn is_done(&self) -> bool {
         self.is_done()
     }
@@ -166,10 +161,6 @@ impl CeriumVmLike for CeriumVM {
 impl CeriumVmLike for DebugCeriumVM {
     fn load_program(&mut self, program: impl IntoIterator<Item = u8>) {
         self.load_program(program)
-    }
-
-    fn new() -> Self {
-        Self::new()
     }
 
     fn is_done(&self) -> bool {
