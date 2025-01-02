@@ -6,7 +6,7 @@ mod types;
 mod register;
 mod debugvm;
 
+pub use debugvm::*;
 pub use ram::*;
 pub use types::*;
 pub use vm::*;
-pub use debugvm::*;

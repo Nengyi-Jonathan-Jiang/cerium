@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::io::{IsTerminal};
+use std::io::IsTerminal;
 
 static mut IS_ANSI_ENABLED: bool = false;
 

@@ -19,3 +19,6 @@ mov i r1 <- f r1
 output <- r1
 // Stop
 halt
+
+"data\n
+"data\n"

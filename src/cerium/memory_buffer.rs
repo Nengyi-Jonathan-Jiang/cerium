@@ -1,3 +1,4 @@
+use crate::cerium::cerium_error::CeriumVMError;
 use crate::cerium::vm::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord};
 use std::any::TypeId;
 use std::fmt::{Debug, Display};
@@ -196,7 +197,7 @@ macro_rules! impl_cerium_primitive_type_for {
                 do_conversion_for!(self: ty as CeInt32);
                 do_conversion_for!(self: ty as CeFloat);
 
-                panic!("Invalid cast between CeriumPrimitiveTypes");
+                CeriumVMError::throw_str("Invalid cast between CeriumPrimitiveTypes");
             }
 
             fn xor(a: Self, b: Self) -> Self { a ^ b }
@@ -228,23 +229,23 @@ impl CeriumPrimitiveType for CeFloat {
         do_conversion_for!(self: ty as CeInt32);
         do_conversion_for!(self: ty as CeFloat);
 
-        panic!("Invalid cast between CeriumPrimitiveTypes");
+        CeriumVMError::throw_str("Invalid cast between CeriumPrimitiveTypes");
     }
 
     fn xor(_: Self, _: Self) -> Self {
-        panic!("Bitwise xor cannot be applied to float")
+        CeriumVMError::throw_str("Bitwise xor cannot be applied to float")
     }
     fn and(_: Self, _: Self) -> Self {
-        panic!("Bitwise and cannot be applied to float")
+        CeriumVMError::throw_str("Bitwise and cannot be applied to float")
     }
     fn or(_: Self, _: Self) -> Self {
-        panic!("Bitwise or cannot be applied to float")
+        CeriumVMError::throw_str("Bitwise or cannot be applied to float")
     }
     fn shl(_: Self, _: Self) -> Self {
-        panic!("Bitwise left shift cannot be applied to float")
+        CeriumVMError::throw_str("Bitwise left shift cannot be applied to float")
     }
     fn shr(_: Self, _: Self) -> Self {
-        panic!("Bitwise right shift cannot be applied to float")
+        CeriumVMError::throw_str("Bitwise right shift cannot be applied to float")
     }
     fn add(a: Self, b: Self) -> Self {
         a + b
@@ -265,6 +266,6 @@ impl CeriumPrimitiveType for CeFloat {
         -a
     }
     fn not(_: Self) -> Self {
-        panic!("Bitwise not cannot be applied to float")
+        CeriumVMError::throw_str("Bitwise not cannot be applied to float")
     }
 }

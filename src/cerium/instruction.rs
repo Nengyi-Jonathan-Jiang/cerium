@@ -269,7 +269,7 @@ pub mod casm_instruction_parts {
         pub fn to_bits(&self) -> u8 {
             *self as u8
         }
-        
+
         pub fn apply<T: CeriumPrimitiveType>(&self, a: T) -> T {
             match self {
                 UnOp::NEG => <T as CeriumPrimitiveType>::neg(a),
@@ -596,15 +596,15 @@ impl Debug for CASMInstruction {
 impl CASMInstruction {
     pub(crate) fn parse_from_stream(
         stream: &mut impl CASMInstructionSourceStream,
-    ) -> CASMInstruction {
+    ) -> Option<CASMInstruction> {
         let curr_instruction_byte = stream.get_next::<u8>();
 
-        if (curr_instruction_byte >> 6) == 3 {
+        Some(if (curr_instruction_byte >> 6) == 3 {
             // Ternary instructions
             let instruction_part = curr_instruction_byte & 0b00001111;
 
             let type_part = (curr_instruction_byte & 0b00110000) >> 4;
-            let ty = Type::parse_from_bits(type_part).unwrap();
+            let ty = Type::parse_from_bits(type_part)?;
 
             let b2 = stream.get_next::<u8>();
             let b3 = stream.get_next::<u8>();
@@ -625,23 +625,23 @@ impl CASMInstruction {
                 CASMInstruction::BinOp {
                     op,
                     ty,
-                    src1: Location::from_bits(b2 >> 4).unwrap(),
-                    src2: Location::from_bits(b2).unwrap(),
-                    dst: Location::from_bits(b3 >> 4).unwrap(),
+                    src1: Location::from_bits(b2 >> 4)?,
+                    src2: Location::from_bits(b2)?,
+                    dst: Location::from_bits(b3 >> 4)?,
                 }
             } else if instruction_part == 0b1110 {
                 CASMInstruction::Cmp {
                     ty,
-                    src: Location::from_bits(b2 >> 4).unwrap(),
-                    dst: Location::from_bits(b3 >> 4).unwrap(),
-                    cnd: Condition::from_bits(b2).unwrap(),
+                    src: Location::from_bits(b2 >> 4)?,
+                    dst: Location::from_bits(b3 >> 4)?,
+                    cnd: Condition::from_bits(b2)?,
                 }
             } else if instruction_part == 0b1111 {
                 CASMInstruction::Jmp {
                     ty,
-                    src: Location::from_bits(b2 >> 4).unwrap(),
-                    tgt: Location::from_bits(b3 >> 4).unwrap(),
-                    cnd: Condition::from_bits(b2).unwrap(),
+                    src: Location::from_bits(b2 >> 4)?,
+                    tgt: Location::from_bits(b3 >> 4)?,
+                    cnd: Condition::from_bits(b2)?,
                 }
             } else {
                 CASMInstruction::NoOp
@@ -651,12 +651,12 @@ impl CASMInstruction {
             match instruction_part {
                 0b0000 => {
                     // MOV
-                    let src_ty = Type::parse_from_bits(curr_instruction_byte >> 2).unwrap();
-                    let dst_ty = Type::parse_from_bits(curr_instruction_byte).unwrap();
+                    let src_ty = Type::parse_from_bits(curr_instruction_byte >> 2)?;
+                    let dst_ty = Type::parse_from_bits(curr_instruction_byte)?;
 
                     let b2 = stream.get_next::<u8>();
-                    let src = Location::from_bits(b2 >> 4).unwrap();
-                    let dst = Location::from_bits(b2).unwrap();
+                    let src = Location::from_bits(b2 >> 4)?;
+                    let dst = Location::from_bits(b2)?;
 
                     CASMInstruction::Mov {
                         src_ty,
@@ -668,17 +668,26 @@ impl CASMInstruction {
                 0b0001 => {
                     // CONST8
                     let dat = stream.get_next::<CeInt8>();
-                    CASMInstruction::Const8(Location::from_bits(curr_instruction_byte).unwrap(), dat)
+                    CASMInstruction::Const8(
+                        Location::from_bits(curr_instruction_byte)?,
+                        dat,
+                    )
                 }
                 0b0010 => {
                     // CONST16
                     let dat = stream.get_next::<CeInt16>();
-                    CASMInstruction::Const16(Location::from_bits(curr_instruction_byte).unwrap(), dat)
+                    CASMInstruction::Const16(
+                        Location::from_bits(curr_instruction_byte)?,
+                        dat,
+                    )
                 }
                 0b0011 => {
                     // CONST32
                     let dat = stream.get_next::<CeInt32>();
-                    CASMInstruction::Const32(Location::from_bits(curr_instruction_byte).unwrap(), dat)
+                    CASMInstruction::Const32(
+                        Location::from_bits(curr_instruction_byte)?,
+                        dat,
+                    )
                 }
                 0b0100 => CASMInstruction::Halt,
                 0b0101 => {
@@ -686,9 +695,9 @@ impl CASMInstruction {
                     let b2 = stream.get_next::<u8>();
 
                     CASMInstruction::Memcpy {
-                        src: Location::from_bits(b2 >> 4).unwrap(),
-                        dst: Location::from_bits(b2).unwrap(),
-                        size: Location::from_bits(curr_instruction_byte).unwrap(),
+                        src: Location::from_bits(b2 >> 4)?,
+                        dst: Location::from_bits(b2)?,
+                        size: Location::from_bits(curr_instruction_byte)?,
                     }
                 }
                 0b0110 => {
@@ -696,8 +705,8 @@ impl CASMInstruction {
                     let b2 = stream.get_next::<u8>();
 
                     CASMInstruction::New {
-                        size: Location::from_bits(b2 >> 4).unwrap(),
-                        dst: Location::from_bits(b2).unwrap(),
+                        size: Location::from_bits(b2 >> 4)?,
+                        dst: Location::from_bits(b2)?,
                     }
                 }
                 0b0111 => {
@@ -705,7 +714,7 @@ impl CASMInstruction {
                     let b2 = stream.get_next::<u8>();
 
                     CASMInstruction::Del {
-                        src: Location::from_bits(b2 >> 4).unwrap(),
+                        src: Location::from_bits(b2 >> 4)?,
                     }
                 }
                 0b1000 | 0b1001 => {
@@ -718,31 +727,29 @@ impl CASMInstruction {
                             0b1001 => UnOp::NOT,
                             _ => unsafe { unreachable_unchecked() },
                         },
-                        ty: Type::parse_from_bits(curr_instruction_byte >> 2).unwrap(),
-                        src: Location::from_bits(b2 >> 4).unwrap(),
-                        dst: Location::from_bits(b2).unwrap(),
+                        ty: Type::parse_from_bits(curr_instruction_byte >> 2)?,
+                        src: Location::from_bits(b2 >> 4)?,
+                        dst: Location::from_bits(b2)?,
                     }
                 }
                 0b1010 => {
-                    CASMInstruction::Input(Location::from_bits(curr_instruction_byte).unwrap())
+                    CASMInstruction::Input(Location::from_bits(curr_instruction_byte)?)
                 }
                 0b1011 => {
-                    CASMInstruction::Output(Location::from_bits(curr_instruction_byte).unwrap())
+                    CASMInstruction::Output(Location::from_bits(curr_instruction_byte)?)
                 }
                 _ => unsafe { unreachable_unchecked() },
             }
-        }
+        })
     }
-    
+
     pub(crate) fn write_to_stream<F: FnMut(u8)>(&self, mut write_byte_to_output: F) {
         use CASMInstruction::*;
 
         match self {
             NoOp => write_byte_to_output(0b11_00_0000),
             Data(data) => {
-                data.iter()
-                    .cloned()
-                    .for_each(|x| write_byte_to_output(x));
+                data.iter().cloned().for_each(|x| write_byte_to_output(x));
             }
             Label(_label_name) => {} // Don't do anything for labels
             Mov {

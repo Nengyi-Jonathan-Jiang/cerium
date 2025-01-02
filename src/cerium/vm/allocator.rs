@@ -1,5 +1,8 @@
 use super::types::{Pointer, Size};
 use super::CeWord;
+use crate::cerium::cerium_error::{
+    CeriumVMHeapAccessError, CeriumVMInternalError,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Formatter};
 
@@ -42,7 +45,7 @@ impl Allocator {
         let curr_block = self
             .blocks
             .get_mut(&ptr)
-            .expect("Internal CeriumVM error: Invalid pointer");
+            .unwrap_or_else(|| CeriumVMHeapAccessError::throw_str("Invalid pointer"));
         curr_block.status = MemoryBlockStatus::FREE;
 
         let curr_block: MemoryBlockInfo = *curr_block;
@@ -55,7 +58,7 @@ impl Allocator {
         let curr_block = self
             .blocks
             .get_mut(&ptr)
-            .expect("Internal CeriumVM error: Invalid pointer");
+            .unwrap_or_else(|| CeriumVMInternalError::throw_str("Invalid pointer"));
         curr_block.status = MemoryBlockStatus::USED;
 
         let curr_block: MemoryBlockInfo = *curr_block;
@@ -85,7 +88,11 @@ impl Allocator {
     fn merge_free_block_with_adjacent(&mut self, mut curr_block: MemoryBlockInfo) {
         // If there is a block before this block
         if let Some(prev_block_ptr) = curr_block.prev_block_start_ptr {
-            let prev_block: MemoryBlockInfo = self.blocks.get(&prev_block_ptr).cloned().unwrap();
+            let prev_block = self.blocks.get(&prev_block_ptr).cloned();
+            if let None = prev_block {
+                CeriumVMInternalError::throw_str("Could not find previous allocation block");
+            }
+            let prev_block = prev_block.unwrap();
             // We should merge with it if it is free
             if prev_block.status == MemoryBlockStatus::FREE {
                 curr_block = self.merge_free_blocks(prev_block, curr_block);
@@ -115,7 +122,7 @@ impl Allocator {
             || block1.status != MemoryBlockStatus::FREE
             || block2.status != MemoryBlockStatus::FREE
         {
-            panic!("Internal CeriumVM Error: can only merged consecutive free blocks");
+            CeriumVMInternalError::throw_str("can only merged consecutive free blocks");
         }
 
         let start = block1.span.start;
@@ -145,7 +152,7 @@ impl Allocator {
         left_size: Size,
     ) -> (MemoryBlockInfo, MemoryBlockInfo) {
         if block.status != MemoryBlockStatus::FREE {
-            panic!("Internal CeriumVM Error: can only split a free block");
+            CeriumVMInternalError::throw_str("can only split a free block");
         }
 
         let start = block.span.start;
@@ -175,7 +182,7 @@ impl Allocator {
         (left_block, right_block)
     }
 
-    pub fn allocate(&mut self, alloc_size: Size) -> Pointer {
+    pub fn alloc(&mut self, alloc_size: Size) -> Pointer {
         // Try to find a free block of the right size
         if let Some(mut block) = self
             .free_blocks_for_size
@@ -205,26 +212,26 @@ impl Allocator {
         start
     }
 
-    pub fn deallocate(&mut self, ptr: Pointer) -> Result<(), String> {
+    pub fn free(&mut self, ptr: Pointer) {
         if let Some(block) = self.blocks.get(&ptr).cloned() {
             if block.status == MemoryBlockStatus::USED {
                 let block = self.mark_block_free(ptr);
                 self.merge_free_block_with_adjacent(block);
-                return Ok(());
+                return;
             }
         }
 
-        Err("CeriumVM Error: invalid pointer to deallocate".to_owned())
+        CeriumVMHeapAccessError::throw_str("invalid pointer to free")
     }
 
-    pub fn get_allocation_size(&self, ptr: Pointer) -> Result<Size, String> {
+    pub fn get_allocation_size(&self, ptr: Pointer) -> Size {
         if let Some(block) = self.blocks.get(&ptr).cloned() {
             if block.status == MemoryBlockStatus::USED {
-                return Ok(block.span.size());
+                return block.span.size();
             }
         }
 
-        Err("CeriumVM Error: invalid pointer to query size".to_owned())
+        CeriumVMHeapAccessError::throw_str("invalid pointer to query size")
     }
 }
 

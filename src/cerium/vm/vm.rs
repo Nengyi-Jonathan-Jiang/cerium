@@ -2,6 +2,7 @@
 
 use super::register::Register;
 use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, Pointer, RAM};
+use crate::cerium::cerium_error::{CeriumVMError, CeriumVMInternalError};
 use crate::cerium::instruction::casm_instruction_parts::{BinOp, Condition, Location, Type, UnOp};
 use crate::cerium::instruction::{
     casm_instruction_parts, CASMInstruction, CASMInstructionSourceStream,
@@ -32,22 +33,16 @@ impl CeriumVM {
         Default::default()
     }
 
-    pub fn load_program(&mut self, program: impl IntoIterator<Item = u8>) -> Result<(), String> {
+    pub fn load_program(&mut self, program: impl IntoIterator<Item = u8>) {
         let program_bytes = program.into_iter().collect::<Vec<_>>();
         let program_len = program_bytes.len() as CeInt32;
 
-        unsafe {
-            if let Err(err) = self.memory.write(Pointer::from(0), program_bytes) {
-                return Err(err);
-            }
-        }
+        unsafe { self.memory.write(Pointer::from(0), program_bytes) }
 
         // Set the instruction pointer to zero
         self.instruction_ptr = 0;
         // Set the stack pointer to point after the program bytes
         unsafe { self.registers[0].get().write(program_len) }
-
-        Ok(())
     }
 
     #[inline(always)]
@@ -61,7 +56,7 @@ impl CeriumVM {
     #[inline(always)]
     pub(crate) fn get_memory<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
         let register_value = self.get_register::<CeInt32>(bits).get() as CeWord;
-        self.memory.at(Pointer::new(register_value)).unwrap()
+        self.memory.at(Pointer::new(register_value))
     }
 
     #[inline(always)]
@@ -80,18 +75,20 @@ impl CeriumVM {
 
     #[inline(always)]
     pub(crate) fn get_next_instruction_and_inc_ip<T: EndianConversion>(&mut self) -> T {
-        let res: T = self
-            .memory
-            .at(Pointer::from(self.instruction_ptr))
-            .unwrap()
-            .get();
+        let res: T = self.memory.at(Pointer::from(self.instruction_ptr)).get();
         // let res = self.program.get::<T>(self.instruction_ptr as usize).get();
         self.instruction_ptr += size_of::<T>() as CeWord;
         res
     }
 
     pub fn execute_next_instruction(&mut self) {
-        match CASMInstruction::parse_from_stream(self) {
+        let next_instruction = CASMInstruction::parse_from_stream(self);
+        if let None = next_instruction {
+            CeriumVMInternalError::throw_str("Could not parse instruction");
+        }
+        let next_instruction = next_instruction.unwrap();
+        
+        match next_instruction {
             CASMInstruction::Mov {
                 src_ty,
                 dst_ty,
@@ -130,11 +127,11 @@ impl CeriumVM {
                 let src = self.get_word_for_location(src.to_bits()).into();
                 let dest = self.get_word_for_location(dst.to_bits()).into();
 
-                self.memory.memcpy(src, dest, size).unwrap();
+                self.memory.memcpy(src, dest, size);
             }
             CASMInstruction::New { size, dst } => {
                 let size = self.get_word_for_location(size.to_bits());
-                let res = CeWord::from(self.memory.allocate(size).unwrap()) as CeInt32;
+                let res = CeWord::from(self.memory.allocate(size)) as CeInt32;
 
                 unsafe {
                     self.get_location::<CeInt32>(dst.to_bits()).write(res);
@@ -142,7 +139,7 @@ impl CeriumVM {
             }
             CASMInstruction::Del { src } => {
                 let src = self.get_word_for_location(src.to_bits()).into();
-                self.memory.deallocate(src).unwrap();
+                self.memory.deallocate(src);
             }
             CASMInstruction::Cmp { ty, src, dst, cnd } => {
                 fn _f<T: CeriumPrimitiveType>(
@@ -218,10 +215,10 @@ impl CeriumVM {
                     io::stdout().flush().unwrap();
 
                     let mut input = String::new();
-                    io::stdin()
-                        .read_line(&mut input)
-                        .expect("Failed to read input");
-                    
+                    io::stdin().read_line(&mut input).unwrap_or_else(|err| {
+                        CeriumVMError::throw_string(format!("Failed to read input: {}", err))
+                    });
+
                     if !io::stdout().is_terminal() || !io::stdin().is_terminal() {
                         print!("{}", input);
                     }

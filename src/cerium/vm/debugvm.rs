@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::hint::unreachable_unchecked;
 use std::mem::size_of;
 use std::ops::AddAssign;
+use crate::cerium::cerium_error::CeriumVMInternalError;
 
 #[derive(Default)]
 pub struct DebugCeriumVM {
@@ -41,7 +42,7 @@ impl DebugCeriumVM {
         Default::default()
     }
 
-    pub fn load_program(&mut self, program: impl IntoIterator<Item = u8>) -> Result<(), String> {
+    pub fn load_program(&mut self, program: impl IntoIterator<Item = u8>) {
         let program = program.into_iter().collect::<Vec<_>>();
         self.program_length = program.len();
 
@@ -61,6 +62,10 @@ impl DebugCeriumVM {
         self.sync_instruction_pointer_with_vm();
 
         let next_instruction = CASMInstruction::parse_from_stream(self);
+        if let None = next_instruction {
+            CeriumVMInternalError::throw_str("Could not parse instruction");
+        }
+        let next_instruction = next_instruction.unwrap();
 
         // Hacky way to get around input being weird
         if let CASMInstruction::Input(..) = next_instruction {
@@ -122,7 +127,7 @@ impl DebugCeriumVM {
                 println!(
                     "{}Deallocated {} bytes of memory at {}{}",
                     yellow(),
-                    CeWord::from(size.unwrap()),
+                    CeWord::from(size),
                     CeWord::from(src),
                     reset(),
                 );
@@ -216,7 +221,7 @@ impl DebugCeriumVM {
                         ty: Type,
                         curr_index: &mut CeWord,
                     ) {
-                        print!("{}{:?} {}{}{}, ", cyan(), ty, purple(), format!("{}", vm.memory.at::<T>((*curr_index).into()).unwrap().get()), reset());
+                        print!("{}{:?} {}{}{}, ", cyan(), ty, purple(), format!("{}", vm.memory.at::<T>((*curr_index).into()).get()), reset());
 
                         curr_index.add_assign(size_of::<T>() as CeWord);
                     }

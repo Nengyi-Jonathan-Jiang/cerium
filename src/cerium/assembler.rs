@@ -6,6 +6,7 @@ use crate::cerium::memory_buffer::EndianConversion;
 use crate::cerium::vm::{CeInt16, CeInt32, CeInt8};
 use std::collections::HashMap;
 use std::{iter, mem};
+use crate::cerium::cerium_error::CeriumAssemblerError;
 
 pub struct CeriumAssembler {
     output_buffer: Vec<u8>,
@@ -80,7 +81,10 @@ impl CeriumAssembler {
             let label_value = self
                 .label_locations
                 .get(label_name)
-                .expect(format!("Could not find label {}", label_name.as_str()).as_str());
+                .unwrap_or_else(|| {
+                    CeriumAssemblerError::throw_string(format!("Could not find label {}", label_name.as_str()))
+                });
+            
             self.output_buffer[*label_location + 3] = *label_value as u8;
             self.output_buffer[*label_location + 2] = (*label_value >> 8) as u8;
             self.output_buffer[*label_location + 1] = (*label_value >> 16) as u8;
@@ -97,15 +101,15 @@ fn parse_str(x: &str) -> Option<CASMInstruction> {
 }
 
 fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstruction> {
-    let command = items.next().unwrap();
-
+    let command = items.next()?;
+    
     use self::BinOp::*;
     use self::UnOp::*;
     use CASMInstruction::*;
 
     Some(match command {
         // Labels
-        _ if command.chars().last().unwrap() == ':'
+        _ if command.chars().last()? == ':'
             && command.chars().rev().skip(1).all(is_label_character) =>
         {
             let label_name = &command[..command.len() - 1];

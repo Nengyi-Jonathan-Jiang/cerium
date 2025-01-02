@@ -1,6 +1,16 @@
-use std::mem::size_of;
 use super::{CeWord, Pointer};
+use crate::cerium::cerium_error::CeriumVMError;
 use crate::cerium::memory_buffer::{EndianConversion, MemoryBuffer, MemoryBufferPtr};
+use std::mem::size_of;
+
+static mut MAX_SIZE: CeWord = 1 << 12;
+fn max_memory() -> CeWord {
+    unsafe { MAX_SIZE }
+}
+#[allow(unused)]
+pub unsafe fn config_growable_memory_max_size(size: CeWord) {
+    MAX_SIZE = size
+}
 
 pub struct GrowableMemoryBlock {
     pub memory: MemoryBuffer,
@@ -20,7 +30,6 @@ impl Default for GrowableMemoryBlock {
 
 impl GrowableMemoryBlock {
     const INITIAL_MEMORY: CeWord = 1 << 8;
-    const MAX_MEMORY: CeWord = 1 << 12;
 
     pub fn new() -> Self {
         let mut memory = MemoryBuffer::new();
@@ -29,26 +38,22 @@ impl GrowableMemoryBlock {
     }
 
     #[inline(always)]
-    pub fn resize_to_fit(&mut self, size: CeWord) -> Result<(), String> {
-        if size > Self::MAX_MEMORY {
-            Err(format!(
-                "CeriumVM error: memory size cannot exceed {} bytes",
-                Self::MAX_MEMORY
-            ).to_owned())
+    pub fn resize_to_fit(&mut self, size: CeWord) {
+        if size > max_memory() {
+            CeriumVMError::throw_string(
+                format!("memory size cannot exceed {} bytes", max_memory()).to_owned(),
+            );
         } else {
             if size > self.memory.size() {
                 self.memory.resize(usize::next_power_of_two(size as usize));
             }
-
-            Ok(())
         }
     }
 
     #[inline(always)]
-    pub fn at<T: EndianConversion>(&mut self, ptr: Pointer) -> Result<MemoryBufferPtr<T>, String> {
-        match self.resize_to_fit(CeWord::from(ptr) + size_of::<T>() as CeWord) {
-            Ok(_) => Ok(self.memory.get(CeWord::from(ptr) as usize)),
-            Err(err) => Err(err),
-        }
+    pub fn at<T: EndianConversion>(&mut self, ptr: Pointer) -> MemoryBufferPtr<T> {
+        self.resize_to_fit(CeWord::from(ptr) + size_of::<T>() as CeWord);
+
+        self.memory.get(CeWord::from(ptr) as usize)
     }
 }
