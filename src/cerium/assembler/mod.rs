@@ -2,11 +2,10 @@ use crate::cerium::instruction::casm_instruction_parts::{
     BinOp, Condition, Location, Register, Type, UnOp,
 };
 use crate::cerium::instruction::CASMInstruction;
-use crate::cerium::vm::{CeInt16, CeInt32, CeInt8};
-use crate::try_do;
-use std::collections::HashMap;
-use std::mem;
 use crate::cerium::memory_buffer::EndianConversion;
+use crate::cerium::vm::{CeInt16, CeInt32, CeInt8};
+use std::collections::HashMap;
+use std::{iter, mem};
 
 pub struct CeriumAssembler {
     output_buffer: Vec<u8>,
@@ -39,7 +38,11 @@ impl CeriumAssembler {
                 continue;
             }
 
-            match parse_line(line.split_whitespace()) {
+            match if line.starts_with("\"") {
+                parse_str(&line[1..])
+            } else {
+                parse_line(line.split_whitespace())
+            } {
                 None => {
                     println!("Invalid line: {}", line)
                 }
@@ -177,6 +180,11 @@ impl CeriumAssembler {
     }
 }
 
+fn parse_str(x: &str) -> Option<CASMInstruction> {
+    let _ = x;
+    todo!()
+}
+
 fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstruction> {
     let command = items.next().unwrap();
 
@@ -229,7 +237,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
         }
         "cmp" => {
             // cmp [dst] <- [ty] [src] [cnd]
-            
+
             let dst = parse_location(items.next()?)?;
 
             items.next()?;
@@ -241,8 +249,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             Cmp { ty, src, dst, cnd }
         }
         "mov" => {
-            // mov [dst_ty] [dst] <- [src_ty] [src]
-            // mov [dst_ty] [dst] <- [constant]
+            // mov [dst_ty] [dst] <- ([src_ty] [src] | [constant])
 
             let dst_ty = parse_ty(items.next()?)?;
             let dst = parse_location(items.next()?)?;
@@ -252,51 +259,32 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             if let Some(src_ty) = parse_ty(src_item) {
                 // src is register
                 let src = parse_location(items.next()?)?;
-    
+
                 Mov {
                     src_ty,
                     dst_ty,
                     src,
                     dst,
                 }
-            }
-            else {
+            } else {
                 // src is a constant
                 match dst_ty {
-                    Type::Int8 => {
-                        let value = parse_integral_value(src_item)?;
-                       
-                        if (value & 0xffffff00) != 0 && (value & 0xffffff00) != 0xffffff00 {
-                            return None;
-                        }
-                  
-                        Lod8(dst, value as CeInt8)
-                    }
-                    Type::Int16 => {
-                        let value = parse_integral_value(src_item)?;
-                        if (value & 0xffff0000) != 0 && (value & 0xffff0000) != 0xffff0000 {
-                            return None;
-                        }
-
-                        Lod16(dst, value as CeInt16)
-                    }
+                    Type::Int8 => Lod8(dst, parse_i8(src_item)?),
+                    Type::Int16 => Lod16(dst, parse_i16(src_item)?),
                     Type::Int32 => {
-                        if let Some(value) = parse_integral_value(src_item) {
+                        if let Some(value) = parse_i32(src_item) {
                             // Integer constant
                             Lod32(dst, value as CeInt32)
-                        }
-                        else if src_item.chars().all(is_label_character) {
+                        } else if src_item.chars().all(is_label_character) {
                             // For i32, we can also load labels
                             LodLabel(dst, src_item.to_owned())
-                        }
-                        else {
+                        } else {
                             return None;
                         }
                     }
                     Type::Float => {
-                        let value: f32 = try_do!(result src_item.parse());
-
-                        Lod32(dst, unsafe { mem::transmute::<f32, CeInt32>(value) }.to_big_endian())                
+                        let value = parse_float_as_i32(src_item)?;
+                        Lod32(dst, value)
                     }
                 }
             }
@@ -337,21 +325,56 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             let location = parse_location(items.next()?)?;
             Output(location)
         }
-        _ => return None,
+        _ => {
+            // Raw data: ([type] [value] | [hex byte])*
+            // Note that raw strings are handled separately outside of this function 
+            
+            let mut items = iter::once(command).chain(items);
+            let mut data = Vec::new();
+            
+            loop {
+                let next = items.next();
+                if let None = next {
+                    break
+                }
+                let next = next.unwrap();
+                // First try to parse data type + value
+                if let Some(ty) = parse_ty(next) {
+                    match ty {
+                        Type::Int8 => data.extend(parse_i8(items.next()?)?.to_be_bytes()),
+                        Type::Int16 => data.extend(parse_i16(items.next()?)?.to_be_bytes()),
+                        Type::Int32 => data.extend(parse_i32(items.next()?)?.to_be_bytes()),
+                        Type::Float => data.extend(parse_float_as_i32(items.next()?)?.to_be_bytes()),
+                    }
+                }
+                // Next try to parse as hex
+                else if let Some(byte) = parse_hex_byte(next) {
+                    data.push(byte);
+                }
+                else {
+                    return None;
+                }
+            }
+            Data(data.into_boxed_slice())
+        }
     })
 }
 
-fn parse_unop<'a>(items: &mut impl Iterator<Item = &'a str>, op: UnOp) -> Option<CASMInstruction> {
-    let ty = parse_ty(items.next()?)?;
-    let dst = parse_location(items.next()?)?;
-    items.next()?;
-    items.next()?;
-    let src = parse_location(items.next()?)?;
-
-    Some(CASMInstruction::UnOp { op, ty, src, dst })
+fn parse_hex_byte(x: &str) -> Option<u8> {
+    if x.len() == 2 {
+        if let Ok(byte) = u8::from_str_radix(x, 16) {
+            Some(byte)
+        }
+        else {
+            None
+        }
+    }  
+    else {
+        None
+    }
 }
 
-fn parse_integral_value(x: &str) -> Option<u32> {
+fn parse_i32(x: &str) -> Option<u32> {
     if let Ok(value) = x.parse::<u32>() {
         return Some(value);
     }
@@ -365,6 +388,43 @@ fn parse_integral_value(x: &str) -> Option<u32> {
     }
 
     None
+}
+
+fn parse_i16(x: &str) -> Option<CeInt16> {
+    let value = parse_i32(x)?;
+    if (value & 0xffff0000) != 0 && (value & 0xffff0000) != 0xffff0000 {
+        None
+    } else {
+        Some(value as CeInt16)
+    }
+}
+
+fn parse_i8(x: &str) -> Option<CeInt8> {
+    let value = parse_i32(x)?;
+
+    if (value & 0xffffff00) != 0 && (value & 0xffffff00) != 0xffffff00 {
+        None
+    } else {
+        Some(value as CeInt8)
+    }
+}
+
+fn parse_float_as_i32(x: &str) -> Option<CeInt32> {
+    if let Ok(value) = x.parse() {
+        Some(unsafe { mem::transmute::<f32, CeInt32>(value) }.to_big_endian())
+    } else {
+        None
+    }
+}
+
+fn parse_unop<'a>(items: &mut impl Iterator<Item = &'a str>, op: UnOp) -> Option<CASMInstruction> {
+    let ty = parse_ty(items.next()?)?;
+    let dst = parse_location(items.next()?)?;
+    items.next()?;
+    items.next()?;
+    let src = parse_location(items.next()?)?;
+
+    Some(CASMInstruction::UnOp { op, ty, src, dst })
 }
 
 fn parse_binop<'a>(

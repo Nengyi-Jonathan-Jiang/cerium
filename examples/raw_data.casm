@@ -1,0 +1,21 @@
+// An example of embedding raw data in .casm files
+// Here, we use raw data to manually write out the machine code representation of mov instruction and its data
+
+// Need this later
+mov f r2 <- 1000
+// Same as `mov f r1 <- 0.5` or `mov i r1 <- [the bits of 0.5]`
+31 f 0.5
+// Multiply r1 (0.5) by r2 (1000) and convert to int
+mul f r1 <- r1 * r2
+mov i r1 <- f r1
+// Output should be 500
+output <- r1
+// Same as `mov f r1 <- 0.264` or `mov i r1 <- [the bits of 0.264]`
+31 f 0.264
+// Multiply r1 (0.264) by r2 (1000) and convert to int
+mul f r1 <- r1 * r2
+mov i r1 <- f r1
+// Output should be 264
+output <- r1
+// Stop
+halt
