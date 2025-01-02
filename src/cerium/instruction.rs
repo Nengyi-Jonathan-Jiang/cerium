@@ -239,6 +239,10 @@ pub mod casm_instruction_parts {
     }
 
     impl BinOp {
+        pub fn to_bits(&self) -> u8 {
+            *self as u8
+        }
+
         pub fn apply<T: CeriumPrimitiveType>(&self, a: T, b: T) -> T {
             match self {
                 BinOp::XOR => <T as CeriumPrimitiveType>::xor(a, b),
@@ -262,6 +266,10 @@ pub mod casm_instruction_parts {
     }
 
     impl UnOp {
+        pub fn to_bits(&self) -> u8 {
+            *self as u8
+        }
+        
         pub fn apply<T: CeriumPrimitiveType>(&self, a: T) -> T {
             match self {
                 UnOp::NEG => <T as CeriumPrimitiveType>::neg(a),
@@ -723,6 +731,93 @@ impl CASMInstruction {
                 }
                 _ => unsafe { unreachable_unchecked() },
             }
+        }
+    }
+    
+    pub(crate) fn write_to_stream<F: FnMut(u8)>(&self, mut write_byte_to_output: F) {
+        use CASMInstruction::*;
+
+        match self {
+            NoOp => write_byte_to_output(0b11_00_0000),
+            Data(data) => {
+                data.iter()
+                    .cloned()
+                    .for_each(|x| write_byte_to_output(x));
+            }
+            Label(_label_name) => {} // Don't do anything for labels
+            Mov {
+                src_ty,
+                dst_ty,
+                src,
+                dst,
+            } => {
+                write_byte_to_output(((src_ty.to_bits()) << 2) | (dst_ty.to_bits()));
+                write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
+            }
+            Const8(loc, val) => {
+                write_byte_to_output(0b00_01_0000 | loc.to_bits());
+                write_byte_to_output(*val as u8);
+            }
+            Const16(loc, val) => {
+                write_byte_to_output(0b00_10_0000 | loc.to_bits());
+                write_byte_to_output((val >> 8) as u8);
+                write_byte_to_output((val >> 0) as u8);
+            }
+            Const32(loc, val) => {
+                write_byte_to_output(0b00_11_0000 | loc.to_bits());
+                write_byte_to_output((val >> 24) as u8);
+                write_byte_to_output((val >> 16) as u8);
+                write_byte_to_output((val >> 8) as u8);
+                write_byte_to_output((val >> 0) as u8);
+            }
+            ConstLabel(loc, _label_name) => {
+                write_byte_to_output(0b00_11_0000 | loc.to_bits());
+                write_byte_to_output(0);
+                write_byte_to_output(0);
+                write_byte_to_output(0);
+                write_byte_to_output(0);
+            }
+            Halt => {
+                write_byte_to_output(0b01000000);
+            }
+            Memcpy { src, dst, size } => {
+                write_byte_to_output(0b01010000 | size.to_bits());
+                write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
+            }
+            New { size, dst } => {
+                write_byte_to_output(0b01100000);
+                write_byte_to_output((size.to_bits() << 4) | dst.to_bits());
+            }
+            Del { src } => {
+                write_byte_to_output(0b01110000 | src.to_bits());
+            }
+            BinOp {
+                op,
+                ty,
+                src1,
+                src2,
+                dst,
+            } => {
+                write_byte_to_output(0b11000000u8 | ((ty.to_bits()) << 4) | (op.to_bits()));
+                write_byte_to_output((src1.to_bits() << 4) | src2.to_bits());
+                write_byte_to_output(dst.to_bits() << 4);
+            }
+            UnOp { op, ty, src, dst } => {
+                write_byte_to_output(((op.to_bits()) << 4) | ((ty.to_bits()) << 2));
+                write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
+            }
+            Cmp { ty, src, dst, cnd } => {
+                write_byte_to_output(0b11_00_1110_u8 | ((ty.to_bits()) << 4));
+                write_byte_to_output((src.to_bits() << 4) | (cnd.to_bits()));
+                write_byte_to_output(dst.to_bits() << 4);
+            }
+            Jmp { ty, src, tgt, cnd } => {
+                write_byte_to_output(0b11_00_1111_u8 | ((ty.to_bits()) << 4));
+                write_byte_to_output((src.to_bits() << 4) | (cnd.to_bits()));
+                write_byte_to_output(tgt.to_bits() << 4);
+            }
+            Input(dst) => write_byte_to_output(0b10100000 | dst.to_bits()),
+            Output(src) => write_byte_to_output(0b10110000 | src.to_bits()),
         }
     }
 }

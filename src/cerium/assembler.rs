@@ -60,103 +60,19 @@ impl CeriumAssembler {
     }
 
     fn write_instruction(&mut self, instruction: CASMInstruction) {
-        use CASMInstruction::*;
+        instruction.write_to_stream(|x: u8| self.output_buffer.push(x));
 
         match instruction {
-            NoOp => self.write_byte_to_output(0b11_00_0000),
-            Data(data) => {
-                data.iter()
-                    .cloned()
-                    .for_each(|x| self.write_byte_to_output(x));
+            CASMInstruction::Label(label_name) => {
+                self.label_locations
+                    .insert(label_name, self.output_buffer.len());
             }
-            Label(label_name) => {
-                self.save_label_location(label_name);
-            }
-            Mov {
-                src_ty,
-                dst_ty,
-                src,
-                dst,
-            } => {
-                self.write_byte_to_output(((src_ty as u8) << 2) | (dst_ty as u8));
-                self.write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
-            }
-            Const8(loc, val) => {
-                self.write_byte_to_output(0b00_01_0000 | loc.to_bits());
-                self.write_byte_to_output(val as u8);
-            }
-            Const16(loc, val) => {
-                self.write_byte_to_output(0b00_10_0000 | loc.to_bits());
-                self.write_byte_to_output((val >> 8) as u8);
-                self.write_byte_to_output(val as u8);
-            }
-            Const32(loc, val) => {
-                self.write_byte_to_output(0b00_11_0000 | loc.to_bits());
-                self.write_byte_to_output((val >> 24) as u8);
-                self.write_byte_to_output((val >> 16) as u8);
-                self.write_byte_to_output((val >> 8) as u8);
-                self.write_byte_to_output(val as u8);
-            }
-            ConstLabel(loc, label_name) => {
-                self.write_byte_to_output(0b00_11_0000 | loc.to_bits());
-                self.write_byte_to_output(0);
-                self.write_byte_to_output(0);
-                self.write_byte_to_output(0);
-                self.write_byte_to_output(0);
+            CASMInstruction::ConstLabel(_location, label_name) => {
                 self.label_placeholder_locations
                     .push((self.output_buffer.len() - 4, label_name));
             }
-            Halt => {
-                self.write_byte_to_output(0b01000000);
-            }
-            Memcpy { src, dst, size } => {
-                self.write_byte_to_output(0b01010000 | size.to_bits());
-                self.write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
-            }
-            New { size, dst } => {
-                self.write_byte_to_output(0b01100000);
-                self.write_byte_to_output((size.to_bits() << 4) | dst.to_bits());
-            }
-            Del { src } => {
-                self.write_byte_to_output(0b01110000 | src.to_bits());
-            }
-            BinOp {
-                op,
-                ty,
-                src1,
-                src2,
-                dst,
-            } => {
-                self.write_byte_to_output(0b11000000u8 | ((ty as u8) << 4) | (op as u8));
-                self.write_byte_to_output((src1.to_bits() << 4) | src2.to_bits());
-                self.write_byte_to_output(dst.to_bits() << 4);
-            }
-            UnOp { op, ty, src, dst } => {
-                self.write_byte_to_output(((op as u8) << 4) | ((ty as u8) << 2));
-                self.write_byte_to_output((src.to_bits() << 4) | dst.to_bits());
-            }
-            Cmp { ty, src, dst, cnd } => {
-                self.write_byte_to_output(0b11_00_1110_u8 | ((ty as u8) << 4));
-                self.write_byte_to_output((src.to_bits() << 4) | (cnd as u8));
-                self.write_byte_to_output(dst.to_bits() << 4);
-            }
-            Jmp { ty, src, tgt, cnd } => {
-                self.write_byte_to_output(0b11_00_1111_u8 | ((ty as u8) << 4));
-                self.write_byte_to_output((src.to_bits() << 4) | (cnd as u8));
-                self.write_byte_to_output(tgt.to_bits() << 4);
-            }
-            Input(dst) => self.write_byte_to_output(0b10100000 | dst.to_bits()),
-            Output(src) => self.write_byte_to_output(0b10110000 | src.to_bits()),
+            _ => {}
         }
-    }
-
-    fn write_byte_to_output(&mut self, x: u8) {
-        self.output_buffer.push(x)
-    }
-
-    fn save_label_location(&mut self, label_name: String) {
-        self.label_locations
-            .insert(label_name, self.output_buffer.len());
     }
 
     fn populate_label_placeholders(&mut self) -> Option<()> {
