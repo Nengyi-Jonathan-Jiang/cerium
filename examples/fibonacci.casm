@@ -2,17 +2,17 @@
 // Here we implement the fibonacci function
 // fib(n) = if n <= 2 { 1 } else { fib(n - 2) + fib(n - 1) }
 
-    // Jump past all the function definitions
-    mov i r1 <- PROGRAM_START
-    jmp r1 always
+// Jump past all the function definitions
+mov i r1 <- PROGRAM_START
+jmp r1 always
 
-    // FIB
-    // A function that recursively computes fibonacci numbers. The function expects the following stack:
+// FIB
+// A function that recursively computes fibonacci numbers. The function expects the following stack:
 
-    // sp + |-16|-15|-14|-13|-12|-11|-10|-9 |-8 |-7 |-6 |-5 |-4 |-3 |-2 |-1 | 0 |
-    //      ^return-location^---(&input)----^
+// sp + |-16|-15|-14|-13|-12|-11|-10|-9 |-8 |-7 |-6 |-5 |-4 |-3 |-2 |-1 | 0 |
+//      ^return-location^---(&input)----^
 
-    // and writes the output into the memory location pointed to by (&input)
+// and writes the output into the memory location pointed to by (&input)
 FIB:
     // Use recursion to compute the nth fibonacci number
 
