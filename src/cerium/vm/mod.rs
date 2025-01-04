@@ -10,3 +10,4 @@ pub use debugvm::*;
 pub use ram::*;
 pub use types::*;
 pub use vm::*;
+pub use growable_memory::config_growable_memory_max_size;
