@@ -6,13 +6,12 @@ use crate::cerium::memory_buffer::{CeriumPrimitiveType, EndianConversion};
 use crate::util::ansi::colors::yellow;
 use crate::util::ansi::colors::{blue, cyan, default, green, purple, reset};
 use crate::{match_cerium_type, CeriumVM};
-use ansi_width::ansi_width;
+use console::measure_text_width;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::hint::unreachable_unchecked;
 use std::mem::size_of;
 use std::ops::AddAssign;
-use crate::cerium::cerium_error::CeriumVMInternalError;
 
 #[derive(Default)]
 pub struct DebugCeriumVM {
@@ -48,18 +47,14 @@ impl DebugCeriumVM {
     }
 
     #[inline(always)]
-    fn get_word_for_location(&mut self, bits: u8) -> CeWord {
-        self.vm.get_location::<CeInt32>(bits).get() as CeWord
+    fn get_word_for_location(&mut self, location: Location) -> CeWord {
+        self.vm.get_location::<CeInt32>(location).get() as CeWord
     }
 
     pub fn execute_next_instruction(&mut self) {
         self.sync_instruction_pointer_with_vm();
 
         let next_instruction = CASMInstruction::parse_from_stream(self);
-        if let None = next_instruction {
-            CeriumVMInternalError::throw_str("Could not parse instruction");
-        }
-        let next_instruction = next_instruction.unwrap();
 
         // Hacky way to get around input being weird
         if let CASMInstruction::Input(..) = next_instruction {
@@ -87,11 +82,11 @@ impl DebugCeriumVM {
             CASMInstruction::Halt => {
                 println!();
                 self.vm.execute_next_instruction();
-            },
+            }
             CASMInstruction::Memcpy { src, dst, size } => {
-                let size = self.get_word_for_location(size.to_bits());
-                let src = self.get_word_for_location(src.to_bits());
-                let dest = self.get_word_for_location(dst.to_bits());
+                let size = self.get_word_for_location(size);
+                let src = self.get_word_for_location(src);
+                let dest = self.get_word_for_location(dst);
 
                 self.vm.execute_next_instruction();
 
@@ -105,7 +100,7 @@ impl DebugCeriumVM {
                 );
             }
             CASMInstruction::New { size, dst } => {
-                let size = self.get_word_for_location(size.to_bits());
+                let size = self.get_word_for_location(size);
 
                 println!("{}Allocated {} bytes of memory{}", yellow(), size, reset(),);
 
@@ -113,7 +108,7 @@ impl DebugCeriumVM {
                 self.debug(Type::Int32, dst);
             }
             CASMInstruction::Del { src } => {
-                let src = self.get_word_for_location(src.to_bits()).into();
+                let src = self.get_word_for_location(src).into();
 
                 let size = self.vm.memory.get_allocation_size(src);
                 self.vm.execute_next_instruction();
@@ -159,7 +154,7 @@ impl DebugCeriumVM {
         print!(
             "{}{} ",
             next_instruction_str,
-            " ".repeat(max(30 - (ansi_width(&next_instruction_str) as i32), 0) as usize)
+            " ".repeat(max(30 - (measure_text_width(&next_instruction_str) as i32), 0) as usize)
         );
     }
 
@@ -176,31 +171,31 @@ impl DebugCeriumVM {
                 self.vm.instruction_ptr,
                 reset(),
             );
-        }
-        else {
+        } else {
             println!()
         }
     }
 
     fn debug(&mut self, dst_ty: Type, dst_loc: Location) {
         // Update the data type at dst_loc
-        if dst_loc.indirect {
-            let mem_loc = self.get_word_for_location(
-                Location {
-                    register: dst_loc.register,
-                    indirect: false,
-                }
-                .to_bits(),
-            );
+        if dst_loc.indirect() {
+            let mem_loc =
+                self.get_word_for_location(Location::new(dst_loc.register(), false));
             self.memory_types.insert(mem_loc, dst_ty);
         } else {
-            self.registers_types[dst_loc.register.to_bits() as usize] = dst_ty;
+            self.registers_types[dst_loc.register().to_bits() as usize] = dst_ty;
         }
 
-        if dst_loc.indirect {
+        if dst_loc.indirect() {
             // Print the stack, minus the program memory
-            print!("{}memory:    {}(program * {} bytes){}, ", yellow(), blue(), self.program_length, reset());
-            
+            print!(
+                "{}memory:    {}(program * {} bytes){}, ",
+                yellow(),
+                blue(),
+                self.program_length,
+                reset()
+            );
+
             let mut curr_index = self.program_length as CeWord;
             let max_index = self.vm.memory.stack_capacity();
             let mut accum_empty: usize = 0;
@@ -209,19 +204,26 @@ impl DebugCeriumVM {
                     if accum_empty != 0 {
                         print!("{}(empty * {} bytes){}, ", blue(), accum_empty, reset());
                     }
-                    
+
                     fn _f<T: CeriumPrimitiveType>(
                         vm: &mut CeriumVM,
                         ty: Type,
                         curr_index: &mut CeWord,
                     ) {
-                        print!("{}{:?} {}{}{}, ", cyan(), ty, purple(), format!("{}", vm.memory.at::<T>((*curr_index).into()).get()), reset());
+                        print!(
+                            "{}{:?} {}{}{}, ",
+                            cyan(),
+                            ty,
+                            purple(),
+                            format!("{}", vm.memory.at::<T>((*curr_index).into()).get()),
+                            reset()
+                        );
 
                         curr_index.add_assign(size_of::<T>() as CeWord);
                     }
 
                     match_cerium_type!(match ty => _f(&mut self.vm, *ty, &mut curr_index));
-                    
+
                     accum_empty = 0;
                 } else {
                     curr_index += 1;
@@ -232,7 +234,7 @@ impl DebugCeriumVM {
         } else {
             print!("{}registers:{} |", yellow(), reset());
             for r in 0..8 {
-                let is_changed_register = r as usize == dst_loc.register.to_bits() as usize;
+                let is_changed_register = r as usize == dst_loc.register().to_bits() as usize;
 
                 fn _f<T: CeriumPrimitiveType>(
                     vm: &mut CeriumVM,
@@ -244,7 +246,11 @@ impl DebugCeriumVM {
                         format!(
                             "{}{}{:?}{} = {}{}{}{}",
                             if is_changed_register { "[" } else { " " },
-                            if is_changed_register { green() } else { default() },
+                            if is_changed_register {
+                                green()
+                            } else {
+                                default()
+                            },
                             register,
                             default(),
                             purple(),
@@ -255,7 +261,7 @@ impl DebugCeriumVM {
                     );
                 }
 
-                match_cerium_type!(match self.registers_types[r as usize] => _f(&mut self.vm, Register::from_bits(r).unwrap(), is_changed_register));
+                match_cerium_type!(match self.registers_types[r as usize] => _f(&mut self.vm, Register::from_bits(r), is_changed_register));
             }
             println!();
         }

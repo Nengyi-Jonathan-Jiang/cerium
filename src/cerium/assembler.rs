@@ -135,10 +135,8 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
             let (ty, src, cnd) = match items.next()? {
                 "always" => (
                     Type::Int8,
-                    Location {
-                        register: Register::SP,
-                        indirect: false,
-                    },
+                    // Any location will work, so just use 0 (sp)
+                    Location::from_bits(0),
                     Condition::ALWAYS,
                 ),
                 "if" => (
@@ -252,7 +250,7 @@ fn parse_line<'a>(mut items: impl Iterator<Item = &'a str>) -> Option<CASMInstru
                 if let None = next {
                     break;
                 }
-                let next = next.unwrap();
+                let next = unsafe {next.unwrap_unchecked() };
                 // First try to parse data type + value
                 if let Some(ty) = parse_ty(next) {
                     match ty {
@@ -375,70 +373,22 @@ fn parse_ty(x: &str) -> Option<Type> {
 fn parse_location(location: &str) -> Option<Location> {
     use Register::*;
     Some(match location {
-        "sp" => Location {
-            register: SP,
-            indirect: false,
-        },
-        "@sp" => Location {
-            register: SP,
-            indirect: true,
-        },
-        "r1" => Location {
-            register: R1,
-            indirect: false,
-        },
-        "@r1" => Location {
-            register: R1,
-            indirect: true,
-        },
-        "r2" => Location {
-            register: R2,
-            indirect: false,
-        },
-        "@r2" => Location {
-            register: R2,
-            indirect: true,
-        },
-        "r3" => Location {
-            register: R3,
-            indirect: false,
-        },
-        "@r3" => Location {
-            register: R3,
-            indirect: true,
-        },
-        "r4" => Location {
-            register: R4,
-            indirect: false,
-        },
-        "@r4" => Location {
-            register: R4,
-            indirect: true,
-        },
-        "r5" => Location {
-            register: R5,
-            indirect: false,
-        },
-        "@r5" => Location {
-            register: R5,
-            indirect: true,
-        },
-        "r6" => Location {
-            register: R6,
-            indirect: false,
-        },
-        "@r6" => Location {
-            register: R6,
-            indirect: true,
-        },
-        "r7" => Location {
-            register: R7,
-            indirect: false,
-        },
-        "@r7" => Location {
-            register: R7,
-            indirect: true,
-        },
+        "sp" => Location::new(SP, false),
+        "@sp" => Location::new(SP, true),
+        "r1" => Location::new(R1, false),
+        "@r1" => Location::new(R1, true),
+        "r2" => Location::new(R2, false),
+        "@r2" => Location::new(R2, true),
+        "r3" => Location::new(R3, false),
+        "@r3" => Location::new(R3, true),
+        "r4" => Location::new(R4, false),
+        "@r4" => Location::new(R4, true),
+        "r5" => Location::new(R5, false),
+        "@r5" => Location::new(R5, true),
+        "r6" => Location::new(R6, false),
+        "@r6" => Location::new(R6, true),
+        "r7" => Location::new(R7, false),
+        "@r7" => Location::new(R7, true),
         _ => return None,
     })
 }

@@ -92,7 +92,7 @@ impl Allocator {
             if let None = prev_block {
                 CeriumVMInternalError::throw_str("Could not find previous allocation block");
             }
-            let prev_block = prev_block.unwrap();
+            let prev_block = unsafe { prev_block.unwrap_unchecked() };
             // We should merge with it if it is free
             if prev_block.status == MemoryBlockStatus::FREE {
                 curr_block = self.merge_free_blocks(prev_block, curr_block);

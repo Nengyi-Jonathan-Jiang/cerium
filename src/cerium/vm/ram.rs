@@ -48,6 +48,7 @@ impl RAM {
         }
     }
 
+    #[inline(always)]
     pub fn at<T: EndianConversion>(&mut self, ptr: Pointer) -> MemoryBufferPtr<T> {
         let mem_ptr = Self::ptr_to_mem_ptr(ptr);
         if Self::is_heap_ptr(ptr) {

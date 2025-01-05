@@ -1,8 +1,10 @@
 pub mod casm_instruction_parts {
     use crate::cerium::memory_buffer::CeriumPrimitiveType;
     use std::fmt::{Debug, Display};
+    use std::mem;
 
     #[derive(Copy, Clone)]
+    #[repr(u8)]
     pub enum Condition {
         NEVER = 0b0000,
         LT = 0b1000,
@@ -19,18 +21,8 @@ pub mod casm_instruction_parts {
             *self as u8
         }
 
-        pub fn from_bits(bits: u8) -> Option<Condition> {
-            Some(match bits & 0b1111 {
-                0b0000 => Condition::NEVER,
-                0b1000 => Condition::LT,
-                0b0100 => Condition::EQ,
-                0b1100 => Condition::LE,
-                0b0010 => Condition::GT,
-                0b1010 => Condition::NE,
-                0b0110 => Condition::GE,
-                0b1110 => Condition::ALWAYS,
-                _ => return None,
-            })
+        pub fn from_bits(bits: u8) -> Condition {
+            unsafe { mem::transmute(bits & 0b1110) }
         }
 
         pub fn test<T: CeriumPrimitiveType>(&self, value: T) -> bool {
@@ -67,6 +59,7 @@ pub mod casm_instruction_parts {
     }
 
     #[derive(Copy, Clone)]
+    #[repr(u8)]
     pub enum Type {
         Int8 = 0,
         Int16 = 1,
@@ -85,14 +78,8 @@ pub mod casm_instruction_parts {
             *self as u8
         }
 
-        pub fn parse_from_bits(bits: u8) -> Option<Self> {
-            Some(match bits & 0b11 {
-                0b00 => Type::Int8,
-                0b01 => Type::Int16,
-                0b10 => Type::Int32,
-                0b11 => Type::Float,
-                _ => return None,
-            })
+        pub fn from_bits(bits: u8) -> Self {
+            unsafe { mem::transmute(bits & 0b11) }
         }
     }
 
@@ -137,6 +124,7 @@ pub mod casm_instruction_parts {
     }
 
     #[derive(Copy, Clone)]
+    #[repr(u8)]
     pub enum Register {
         SP = 0,
         R1 = 1,
@@ -149,18 +137,8 @@ pub mod casm_instruction_parts {
     }
 
     impl Register {
-        pub fn from_bits(bits: u8) -> Option<Self> {
-            Some(match bits & 0b111 {
-                0 => Register::SP,
-                1 => Register::R1,
-                2 => Register::R2,
-                3 => Register::R3,
-                4 => Register::R4,
-                5 => Register::R5,
-                6 => Register::R6,
-                7 => Register::R7,
-                _ => return None,
-            })
+        pub fn from_bits(bits: u8) -> Self {
+            unsafe { mem::transmute(bits & 0b111) }
         }
 
         pub fn to_bits(&self) -> u8 {
@@ -188,26 +166,32 @@ pub mod casm_instruction_parts {
     }
 
     #[derive(Copy, Clone)]
+    #[repr(C)]
     pub struct Location {
-        pub register: Register,
-        pub indirect: bool,
+        bits: u8
     }
 
     impl Location {
-        pub fn to_bits(&self) -> u8 {
-            let v = self.register.to_bits();
-            if self.indirect {
-                v | 0b1000
-            } else {
-                v
+        pub fn new(register: Register, indirect: bool) -> Self {
+            Self {
+                bits: register.to_bits() | (indirect as u8 * 0b1000),
             }
         }
 
-        pub fn from_bits(bits: u8) -> Option<Self> {
-            Some(Self {
-                register: Register::from_bits(bits)?,
-                indirect: (bits & 0b1000) != 0,
-            })
+        pub fn register(&self) -> Register {
+            Register::from_bits(self.to_bits())
+        }
+
+        pub fn indirect(&self) -> bool {
+            (self.to_bits() & 0b1000) != 0
+        }
+
+        pub fn to_bits(&self) -> u8 {
+            self.bits
+        }
+
+        pub fn from_bits(bits: u8) -> Self {
+            unsafe { mem::transmute(bits & 0b1111) }
         }
     }
 
@@ -216,8 +200,8 @@ pub mod casm_instruction_parts {
             write!(
                 f,
                 "{}{:?}",
-                if self.indirect { "@" } else { "" },
-                self.register
+                if self.indirect() { "@" } else { "" },
+                self.register()
             )
         }
     }
@@ -594,17 +578,18 @@ impl Debug for CASMInstruction {
 }
 
 impl CASMInstruction {
+    #[inline(always)]
     pub(crate) fn parse_from_stream(
         stream: &mut impl CASMInstructionSourceStream,
-    ) -> Option<CASMInstruction> {
+    ) -> CASMInstruction {
         let curr_instruction_byte = stream.get_next::<u8>();
 
-        Some(if (curr_instruction_byte >> 6) == 3 {
+        if (curr_instruction_byte >> 6) == 3 {
             // Ternary instructions
             let instruction_part = curr_instruction_byte & 0b00001111;
 
             let type_part = (curr_instruction_byte & 0b00110000) >> 4;
-            let ty = Type::parse_from_bits(type_part)?;
+            let ty = Type::from_bits(type_part);
 
             let b2 = stream.get_next::<u8>();
             let b3 = stream.get_next::<u8>();
@@ -625,23 +610,23 @@ impl CASMInstruction {
                 CASMInstruction::BinOp {
                     op,
                     ty,
-                    src1: Location::from_bits(b2 >> 4)?,
-                    src2: Location::from_bits(b2)?,
-                    dst: Location::from_bits(b3 >> 4)?,
+                    src1: Location::from_bits(b2 >> 4),
+                    src2: Location::from_bits(b2),
+                    dst: Location::from_bits(b3 >> 4),
                 }
             } else if instruction_part == 0b1110 {
                 CASMInstruction::Cmp {
                     ty,
-                    src: Location::from_bits(b2 >> 4)?,
-                    dst: Location::from_bits(b3 >> 4)?,
-                    cnd: Condition::from_bits(b2)?,
+                    src: Location::from_bits(b2 >> 4),
+                    dst: Location::from_bits(b3 >> 4),
+                    cnd: Condition::from_bits(b2),
                 }
             } else if instruction_part == 0b1111 {
                 CASMInstruction::Jmp {
                     ty,
-                    src: Location::from_bits(b2 >> 4)?,
-                    tgt: Location::from_bits(b3 >> 4)?,
-                    cnd: Condition::from_bits(b2)?,
+                    src: Location::from_bits(b2 >> 4),
+                    tgt: Location::from_bits(b3 >> 4),
+                    cnd: Condition::from_bits(b2),
                 }
             } else {
                 CASMInstruction::NoOp
@@ -651,12 +636,12 @@ impl CASMInstruction {
             match instruction_part {
                 0b0000 => {
                     // MOV
-                    let src_ty = Type::parse_from_bits(curr_instruction_byte >> 2)?;
-                    let dst_ty = Type::parse_from_bits(curr_instruction_byte)?;
+                    let src_ty = Type::from_bits(curr_instruction_byte >> 2);
+                    let dst_ty = Type::from_bits(curr_instruction_byte);
 
                     let b2 = stream.get_next::<u8>();
-                    let src = Location::from_bits(b2 >> 4)?;
-                    let dst = Location::from_bits(b2)?;
+                    let src = Location::from_bits(b2 >> 4);
+                    let dst = Location::from_bits(b2);
 
                     CASMInstruction::Mov {
                         src_ty,
@@ -668,26 +653,17 @@ impl CASMInstruction {
                 0b0001 => {
                     // CONST8
                     let dat = stream.get_next::<CeInt8>();
-                    CASMInstruction::Const8(
-                        Location::from_bits(curr_instruction_byte)?,
-                        dat,
-                    )
+                    CASMInstruction::Const8(Location::from_bits(curr_instruction_byte), dat)
                 }
                 0b0010 => {
                     // CONST16
                     let dat = stream.get_next::<CeInt16>();
-                    CASMInstruction::Const16(
-                        Location::from_bits(curr_instruction_byte)?,
-                        dat,
-                    )
+                    CASMInstruction::Const16(Location::from_bits(curr_instruction_byte), dat)
                 }
                 0b0011 => {
                     // CONST32
                     let dat = stream.get_next::<CeInt32>();
-                    CASMInstruction::Const32(
-                        Location::from_bits(curr_instruction_byte)?,
-                        dat,
-                    )
+                    CASMInstruction::Const32(Location::from_bits(curr_instruction_byte), dat)
                 }
                 0b0100 => CASMInstruction::Halt,
                 0b0101 => {
@@ -695,9 +671,9 @@ impl CASMInstruction {
                     let b2 = stream.get_next::<u8>();
 
                     CASMInstruction::Memcpy {
-                        src: Location::from_bits(b2 >> 4)?,
-                        dst: Location::from_bits(b2)?,
-                        size: Location::from_bits(curr_instruction_byte)?,
+                        src: Location::from_bits(b2 >> 4),
+                        dst: Location::from_bits(b2),
+                        size: Location::from_bits(curr_instruction_byte),
                     }
                 }
                 0b0110 => {
@@ -705,8 +681,8 @@ impl CASMInstruction {
                     let b2 = stream.get_next::<u8>();
 
                     CASMInstruction::New {
-                        size: Location::from_bits(b2 >> 4)?,
-                        dst: Location::from_bits(b2)?,
+                        size: Location::from_bits(b2 >> 4),
+                        dst: Location::from_bits(b2),
                     }
                 }
                 0b0111 => {
@@ -714,7 +690,7 @@ impl CASMInstruction {
                     let b2 = stream.get_next::<u8>();
 
                     CASMInstruction::Del {
-                        src: Location::from_bits(b2 >> 4)?,
+                        src: Location::from_bits(b2 >> 4),
                     }
                 }
                 0b1000 | 0b1001 => {
@@ -727,20 +703,16 @@ impl CASMInstruction {
                             0b1001 => UnOp::NOT,
                             _ => unsafe { unreachable_unchecked() },
                         },
-                        ty: Type::parse_from_bits(curr_instruction_byte >> 2)?,
-                        src: Location::from_bits(b2 >> 4)?,
-                        dst: Location::from_bits(b2)?,
+                        ty: Type::from_bits(curr_instruction_byte >> 2),
+                        src: Location::from_bits(b2 >> 4),
+                        dst: Location::from_bits(b2),
                     }
                 }
-                0b1010 => {
-                    CASMInstruction::Input(Location::from_bits(curr_instruction_byte)?)
-                }
-                0b1011 => {
-                    CASMInstruction::Output(Location::from_bits(curr_instruction_byte)?)
-                }
+                0b1010 => CASMInstruction::Input(Location::from_bits(curr_instruction_byte)),
+                0b1011 => CASMInstruction::Output(Location::from_bits(curr_instruction_byte)),
                 _ => unsafe { unreachable_unchecked() },
             }
-        })
+        }
     }
 
     pub(crate) fn write_to_stream<F: FnMut(u8)>(&self, mut write_byte_to_output: F) {

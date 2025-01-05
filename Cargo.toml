@@ -9,4 +9,4 @@ panic = 'unwind'
 
 [dependencies]
 enable-ansi-support = "0.2.1"
-ansi-width = "0.1.0"
+console = "0.15.10"

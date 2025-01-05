@@ -2,7 +2,7 @@
 
 use super::register::Register;
 use super::{CeFloat, CeInt16, CeInt32, CeInt8, CeWord, Pointer, RAM};
-use crate::cerium::cerium_error::{CeriumVMError, CeriumVMInternalError};
+use crate::cerium::cerium_error::{CeriumVMError};
 use crate::cerium::instruction::casm_instruction_parts::{BinOp, Condition, Location, Type, UnOp};
 use crate::cerium::instruction::{
     casm_instruction_parts, CASMInstruction, CASMInstructionSourceStream,
@@ -23,6 +23,7 @@ pub struct CeriumVM {
 }
 
 impl CASMInstructionSourceStream for CeriumVM {
+    #[inline(always)]
     fn get_next<T: EndianConversion>(&mut self) -> T {
         self.get_next_instruction_and_inc_ip()
     }
@@ -46,48 +47,46 @@ impl CeriumVM {
     }
 
     #[inline(always)]
-    fn get_register<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
-        self.registers
-            .get_mut((bits & 0b111) as usize)
-            .unwrap()
-            .get()
-    }
-
-    #[inline(always)]
-    pub(crate) fn get_memory<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
-        let register_value = self.get_register::<CeInt32>(bits).get() as CeWord;
-        self.memory.at(Pointer::new(register_value))
-    }
-
-    #[inline(always)]
-    pub(crate) fn get_location<T: EndianConversion>(&mut self, bits: u8) -> MemoryBufferPtr<T> {
-        if (bits & 0b1000) != 0 {
-            self.get_memory(bits)
-        } else {
-            self.get_register(bits)
+    fn get_register<T: EndianConversion>(&mut self, register: casm_instruction_parts::Register) -> MemoryBufferPtr<T> {
+        unsafe {
+            self.registers
+                .get_mut(register.to_bits() as usize)
+                .unwrap_unchecked()
+                .get()
         }
     }
 
     #[inline(always)]
-    pub(crate) fn get_word_for_location(&mut self, bits: u8) -> CeWord {
-        self.get_location::<CeInt32>(bits).get() as CeWord
+    pub(crate) fn get_memory<T: EndianConversion>(&mut self, register: casm_instruction_parts::Register) -> MemoryBufferPtr<T> {
+        let register_value = self.get_register::<CeInt32>(register).get() as CeWord;
+        self.memory.at(Pointer::new(register_value))
+    }
+
+    #[inline(always)]
+    pub(crate) fn get_location<T: EndianConversion>(&mut self, loc: Location) -> MemoryBufferPtr<T> {
+        let register = loc.register();
+        if loc.indirect() {
+            self.get_memory(register)
+        } else {
+            self.get_register(register)
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn get_word_for_location(&mut self, location: Location) -> CeWord {
+        self.get_location::<CeInt32>(location).get() as CeWord
     }
 
     #[inline(always)]
     pub(crate) fn get_next_instruction_and_inc_ip<T: EndianConversion>(&mut self) -> T {
         let res: T = self.memory.at(Pointer::from(self.instruction_ptr)).get();
-        // let res = self.program.get::<T>(self.instruction_ptr as usize).get();
         self.instruction_ptr += size_of::<T>() as CeWord;
         res
     }
 
     pub fn execute_next_instruction(&mut self) {
         let next_instruction = CASMInstruction::parse_from_stream(self);
-        if let None = next_instruction {
-            CeriumVMInternalError::throw_str("Could not parse instruction");
-        }
-        let next_instruction = next_instruction.unwrap();
-        
+
         match next_instruction {
             CASMInstruction::Mov {
                 src_ty,
@@ -101,7 +100,7 @@ impl CeriumVM {
                     src: Location,
                     dst: Location,
                 ) {
-                    let val = vm.get_location::<T>(src.to_bits()).get();
+                    let val = vm.get_location::<T>(src).get();
 
                     fn _f<T: CeriumPrimitiveType, T2: CeriumPrimitiveType>(
                         vm: &mut CeriumVM,
@@ -109,7 +108,7 @@ impl CeriumVM {
                         val: T,
                     ) {
                         unsafe {
-                            vm.get_location::<T2>(dst.to_bits())
+                            vm.get_location::<T2>(dst)
                                 .write(val.cast_to_primitive())
                         }
                     }
@@ -118,27 +117,27 @@ impl CeriumVM {
 
                 match_cerium_type!(match src_ty => _f(self, dst_ty, src, dst))
             }
-            CASMInstruction::Const8(loc, dat) => self.mov_const(loc.to_bits(), dat),
-            CASMInstruction::Const16(loc, dat) => self.mov_const(loc.to_bits(), dat),
-            CASMInstruction::Const32(loc, dat) => self.mov_const(loc.to_bits(), dat),
+            CASMInstruction::Const8(loc, dat) => self.mov_const(loc, dat),
+            CASMInstruction::Const16(loc, dat) => self.mov_const(loc, dat),
+            CASMInstruction::Const32(loc, dat) => self.mov_const(loc, dat),
             CASMInstruction::Halt => self.done = true,
             CASMInstruction::Memcpy { src, dst, size } => {
-                let size = self.get_word_for_location(size.to_bits()).into();
-                let src = self.get_word_for_location(src.to_bits()).into();
-                let dest = self.get_word_for_location(dst.to_bits()).into();
+                let size = self.get_word_for_location(size).into();
+                let src = self.get_word_for_location(src).into();
+                let dest = self.get_word_for_location(dst).into();
 
                 self.memory.memcpy(src, dest, size);
             }
             CASMInstruction::New { size, dst } => {
-                let size = self.get_word_for_location(size.to_bits());
+                let size = self.get_word_for_location(size);
                 let res = CeWord::from(self.memory.allocate(size)) as CeInt32;
 
                 unsafe {
-                    self.get_location::<CeInt32>(dst.to_bits()).write(res);
+                    self.get_location::<CeInt32>(dst).write(res);
                 }
             }
             CASMInstruction::Del { src } => {
-                let src = self.get_word_for_location(src.to_bits()).into();
+                let src = self.get_word_for_location(src).into();
                 self.memory.deallocate(src);
             }
             CASMInstruction::Cmp { ty, src, dst, cnd } => {
@@ -148,10 +147,10 @@ impl CeriumVM {
                     dst: Location,
                     cnd: Condition,
                 ) {
-                    let val: T = vm.get_location(src.to_bits()).get();
+                    let val: T = vm.get_location(src).get();
                     let compare_result = cnd.test(val) as CeInt8;
                     unsafe {
-                        vm.get_location(dst.to_bits()).write(compare_result);
+                        vm.get_location(dst).write(compare_result);
                     }
                 }
 
@@ -164,8 +163,8 @@ impl CeriumVM {
                     tgt: Location,
                     cnd: Condition,
                 ) {
-                    if cnd.test(vm.get_location::<T>(src.to_bits()).get()) {
-                        vm.instruction_ptr = vm.get_word_for_location(tgt.to_bits());
+                    if cnd.test(vm.get_location::<T>(src).get()) {
+                        vm.instruction_ptr = vm.get_word_for_location(tgt);
                     }
                 }
 
@@ -185,10 +184,10 @@ impl CeriumVM {
                     src2: Location,
                     dst: Location,
                 ) {
-                    let operand_1: T = vm.get_location(src1.to_bits()).get();
-                    let operand_2: T = vm.get_location(src2.to_bits()).get();
+                    let operand_1: T = vm.get_location(src1).get();
+                    let operand_2: T = vm.get_location(src2).get();
                     let res = op.apply(operand_1, operand_2);
-                    unsafe { vm.get_location(dst.to_bits()).write(res) }
+                    unsafe { vm.get_location(dst).write(res) }
                 }
 
                 match_cerium_type!(match ty => _f(self, op, src1, src2, dst))
@@ -200,9 +199,9 @@ impl CeriumVM {
                     src: Location,
                     dst: Location,
                 ) {
-                    let operand: T = vm.get_location(src.to_bits()).get();
+                    let operand: T = vm.get_location(src).get();
                     let res = op.apply(operand);
-                    unsafe { vm.get_location(dst.to_bits()).write(res) }
+                    unsafe { vm.get_location(dst).write(res) }
                 }
 
                 match_cerium_type!(match ty => _f(self, op, src, dst))
@@ -235,13 +234,13 @@ impl CeriumVM {
                 }
 
                 unsafe {
-                    self.get_location::<CeInt32>(dst.to_bits()).write(value);
+                    self.get_location::<CeInt32>(dst).write(value);
                 }
             }
             CASMInstruction::Output(src) => {
                 println!(
                     "<CeriumVM> {}",
-                    self.get_location::<CeInt32>(src.to_bits()).get()
+                    self.get_location::<CeInt32>(src).get()
                 );
             }
             CASMInstruction::NoOp => {}
@@ -254,7 +253,7 @@ impl CeriumVM {
     }
 
     #[inline(always)]
-    fn mov_const<T: EndianConversion>(&mut self, loc: u8, dat: T) {
+    fn mov_const<T: EndianConversion>(&mut self, loc: Location, dat: T) {
         unsafe { self.get_location::<T>(loc).write(dat) }
     }
 
