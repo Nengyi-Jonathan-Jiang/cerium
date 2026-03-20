@@ -5,7 +5,7 @@ use crate::cerium::vm::{config_growable_memory_max_size, DebugCeriumVM};
 use crate::util::ansi::colors::{red, reset};
 use crate::util::ansi::enable_ansi;
 use std::env::{args};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::{iter, panic};
@@ -27,8 +27,8 @@ fn main() {
                 let (files, mut output_file) = open_input_files_and_output_file(&mut args);
                 let assembled_program = assemble(files);
 
-                output_file.write(&*assembled_program).unwrap_or_else(|_| {
-                    BasicCeriumError::throw_str("Unable to write to output file")
+                output_file.write(&*assembled_program).unwrap_or_else(|e| {
+                    BasicCeriumError::throw_string(e.to_string())
                 });
             }
             "debug-asm" => {
@@ -37,7 +37,7 @@ fn main() {
                 let files = open_input_files(&mut args);
                 let assembled_program = assemble(files);
 
-                DebugCeriumVM::execute_program(assembled_program);
+                DebugCeriumVM::execute_program(assembled_program.iter().cloned());
             }
             "run-asm" => {
                 handle_max_memory_arg_if_exists(&mut args);
@@ -45,21 +45,21 @@ fn main() {
                 let files = open_input_files(&mut args);
                 let assembled_program = assemble(files);
 
-                CeriumVM::execute_program(assembled_program);
+                CeriumVM::execute_program(assembled_program.iter().cloned());
             }
             "debug" => {
                 handle_max_memory_arg_if_exists(&mut args);
 
                 let program = read_binary_file(&mut args);
 
-                DebugCeriumVM::execute_program(program.into_boxed_slice());
+                DebugCeriumVM::execute_program(program);
             }
             _ => {
                 handle_max_memory_arg_if_exists(&mut args);
 
                 let program = read_binary_file(&mut iter::once(first_arg));
 
-                CeriumVM::execute_program(program.into_boxed_slice());
+                CeriumVM::execute_program(program);
             }
         },
     };
@@ -92,16 +92,22 @@ fn setup_panic_handler() {
     }));
 }
 
-fn open_file(input_path: &str) -> File {
+fn open_file_read(input_path: &str) -> File {
     File::open(Path::new(input_path)).unwrap_or_else(|_| {
         BasicCeriumError::throw_string(format!("File not found: {}", input_path))
     })
 }
 
-fn open_input_files(args: &mut impl Iterator<Item = String>) -> Vec<File> {
+fn open_file_write(output_path: &str) -> File {
+    OpenOptions::new().write(true).create(true).open(Path::new(output_path)).unwrap_or_else(|_| {
+        BasicCeriumError::throw_string(format!("File not found: {}", output_path))
+    })
+}
+
+fn open_input_files(args: &mut impl Iterator<Item=String>) -> Vec<File> {
     let mut input_files = Vec::new();
     while let Some(file_name) = args.next() {
-        input_files.push(open_file(&file_name));
+        input_files.push(open_file_read(&file_name));
     }
     if input_files.is_empty() {
         BasicCeriumError::throw_str("No input file(s) provided")
@@ -110,16 +116,22 @@ fn open_input_files(args: &mut impl Iterator<Item = String>) -> Vec<File> {
     input_files
 }
 
-fn open_input_files_and_output_file(args: &mut impl Iterator<Item = String>) -> (Vec<File>, File) {
-    let mut input_files = open_input_files(args);
-    let output_file = input_files
-        .pop()
+fn open_input_files_and_output_file(args: &mut impl Iterator<Item=String>) -> (Vec<File>, File) {
+    let mut file_paths = args.collect::<Vec<_>>();
+    let output_path = file_paths.pop()
         .unwrap_or_else(|| BasicCeriumError::throw_str("No output file provided"));
+
+    if file_paths.is_empty() {
+        BasicCeriumError::throw_str("No input files provided")
+    }
+
+    let input_files = open_input_files(&mut file_paths.into_iter());
+    let output_file = open_file_write(&output_path);
     (input_files, output_file)
 }
 
-fn read_binary_file(args: &mut impl Iterator<Item = String>) -> Vec<u8> {
-    let mut file = open_file(
+fn read_binary_file(args: &mut impl Iterator<Item=String>) -> Vec<u8> {
+    let mut file = open_file_read(
         &args
             .next()
             .unwrap_or_else(|| BasicCeriumError::throw_str("No binary file provided")),
@@ -130,7 +142,7 @@ fn read_binary_file(args: &mut impl Iterator<Item = String>) -> Vec<u8> {
     program
 }
 
-fn assemble(files: impl IntoIterator<Item = File>) -> Box<[u8]> {
+fn assemble(files: impl IntoIterator<Item=File>) -> Box<[u8]> {
     let mut input_concatenated = String::new();
 
     for mut file in files {
@@ -159,11 +171,11 @@ fn help() {
 }
 
 trait CeriumVmLike: Sized + Default {
-    fn load_program(&mut self, program: impl IntoIterator<Item = u8>);
+    fn load_program(&mut self, program: impl IntoIterator<Item=u8>);
     fn is_done(&self) -> bool;
     fn execute_next_instruction(&mut self);
 
-    fn execute_program(program: impl IntoIterator<Item = u8>) {
+    fn execute_program(program: impl IntoIterator<Item=u8>) {
         let program = program.into_iter().collect::<Vec<_>>();
 
         let mut vm = Self::default();
@@ -177,7 +189,7 @@ trait CeriumVmLike: Sized + Default {
 }
 
 impl CeriumVmLike for CeriumVM {
-    fn load_program(&mut self, program: impl IntoIterator<Item = u8>) {
+    fn load_program(&mut self, program: impl IntoIterator<Item=u8>) {
         self.load_program(program)
     }
 
@@ -191,7 +203,7 @@ impl CeriumVmLike for CeriumVM {
 }
 
 impl CeriumVmLike for DebugCeriumVM {
-    fn load_program(&mut self, program: impl IntoIterator<Item = u8>) {
+    fn load_program(&mut self, program: impl IntoIterator<Item=u8>) {
         self.load_program(program)
     }
 
