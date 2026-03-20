@@ -1,0 +1,15 @@
+  input -> r1
+  mov i r2 <- 2
+  mov i r3 <- 1
+  add i r1 <- r1 + r3
+  mov i r4 <- LOOP_BEGIN
+  mov i r5 <- LOOP_END
+LOOP_BEGIN:
+  mod i r6 <- r1 % r2
+  sub i r1 <- r1 - r3
+  jmp r5 if i r1 <= 0
+  jmp r4 if i r6 == 0
+  output <- r1
+  jmp r4 always
+LOOP_END:
+  halt
