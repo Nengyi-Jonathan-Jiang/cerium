@@ -6,6 +6,9 @@ Rust.
 Focused on instruction set design, bytecode execution, memory management, and
 low-level systems behavior in an interpreted VM.
 
+This builds on older work done in [a previous project](https://github.com/Nengyi-Jonathan-Jiang/Parser-Lexer-Generators)
+which featured a more rudimentary form of this idea.
+
 ## Features
 
 - Register-based execution model
